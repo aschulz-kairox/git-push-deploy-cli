@@ -1,0 +1,18 @@
+{
+  "services": {
+    "example-api": {
+      "packages": ["my-api"],
+      "mainPackage": "my-api",
+      "deployRepo": "../deploy-my-api",
+      "pm2Name": "my-api",
+      "pm2Home": "/opt/myapp/.pm2",
+      "artifacts": ["dist", "package.json", "package-lock.json", "ecosystem.config.cjs"],
+      "server": {
+        "targetDir": "/opt/myapp/my-api",
+        "bareRepo": "/git/deploy-my-api",
+        "user": "myapp",
+        "group": "deploy-my-api"
+      }
+    }
+  }
+}
