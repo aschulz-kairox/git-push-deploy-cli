@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { execSync } from 'child_process';
 import { getServiceConfig, getWorkspaceRoot, getSourceDir, getDeployRepoPath, CONFIG_FILENAME } from '../config/loader.js';
-import { DEFAULT_ARTIFACTS, parseSshPort, buildSshUrl } from '../config/types.js';
+import { DEFAULT_ARTIFACTS, parseSshPort, buildSshUrl, getPrimaryServer } from '../config/types.js';
 import { ensureDir, removeDir, copy, exists, joinPath } from '../utils/files.js';
 
 /**
@@ -58,8 +58,9 @@ export async function stageCommand(serviceName: string): Promise<void> {
   console.log(chalk.gray(`  Source: ${config.sourceDir}`));
   console.log(chalk.gray(`  Deploy: ${config.sourceDir}/${config.deployRepo}`));
   
-  // Lazy init deploy repo
-  const { host, bareRepo, sshOptions } = config.server;
+  // Lazy init deploy repo (use primary server for remote)
+  const primaryServer = getPrimaryServer(config);
+  const { host, bareRepo, sshOptions } = primaryServer;
   const wasInitialized = initDeployRepoIfNeeded(deployRepoPath, host, bareRepo, sshOptions);
   if (wasInitialized) {
     console.log(chalk.green('  ✓ Deploy repo initialized'));

@@ -2,6 +2,7 @@
 import { stageCommand, stageCommandDryRun } from './stage.js';
 import { releaseCommand, releaseCommandDryRun } from './release.js';
 import { getServiceConfig } from '../config/loader.js';
+import { getServers } from '../config/types.js';
 
 interface DeployOptions {
   message?: string;
@@ -14,13 +15,15 @@ interface DeployOptions {
  * 
  * New architecture:
  * 1. Stage: Copy build artifacts to deploy repo (with lazy init)
- * 2. Release: Commit and push to bare repo on server
+ * 2. Release: Commit and push to bare repo on server(s)
  * 3. Server hook handles: git checkout, npm install, pm2 restart
  * 
  * No more SSH install from client - the post-receive hook does everything!
  */
 export async function deployCommand(serviceName: string, options: DeployOptions = {}): Promise<void> {
   const config = getServiceConfig(serviceName);
+  const servers = getServers(config);
+  const serverList = servers.map(s => s.name || s.host).join(', ');
   
   if (options.dryRun) {
     console.log(chalk.blue.bold(`[DRY RUN] Deploy preview for ${serviceName}`));
@@ -28,7 +31,7 @@ export async function deployCommand(serviceName: string, options: DeployOptions 
     console.log(chalk.blue.bold(`Deploying ${serviceName}...`));
   }
   console.log(chalk.gray(`  Environment: ${config.environment || 'production'}`));
-  console.log(chalk.gray(`  Server: ${config.server.host}`));
+  console.log(chalk.gray(`  Server${servers.length > 1 ? 's' : ''}: ${serverList}`));
   console.log('');
 
   if (options.dryRun) {

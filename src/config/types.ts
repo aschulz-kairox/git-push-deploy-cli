@@ -9,6 +9,29 @@ export type ProcessManagerType = 'pm2' | 'systemd' | 'gpdd';
 export type EnvironmentType = 'production' | 'staging' | 'development';
 
 /**
+ * Server configuration for deployment target
+ */
+export interface ServerConfig {
+  /** SSH host (user@hostname) */
+  host: string;
+
+  /** Additional SSH options (e.g., "-p 6771 -4") */
+  sshOptions?: string;
+
+  /** Where to install on server (target directory) */
+  targetDir: string;
+
+  /** Path to bare git repo on server */
+  bareRepo: string;
+
+  /** Unix group for shared access (created if not exists) */
+  group?: string;
+  
+  /** Server-specific name/label (optional, for display) */
+  name?: string;
+}
+
+/**
  * Service configuration for git-deploy
  * 
  * New architecture: deploy/ folder inside source project
@@ -51,23 +74,11 @@ export interface ServiceConfig {
   /** Environment variables to write to .env file on server */
   env?: Record<string, string | number | boolean>;
 
-  /** Server-side configuration */
-  server: {
-    /** SSH host (user@hostname) */
-    host: string;
-
-    /** Additional SSH options (e.g., "-p 6771 -4") */
-    sshOptions?: string;
-
-    /** Where to install on server (target directory) */
-    targetDir: string;
-
-    /** Path to bare git repo on server */
-    bareRepo: string;
-
-    /** Unix group for shared access (created if not exists) */
-    group?: string;
-  };
+  /** Server-side configuration (single server) */
+  server?: ServerConfig;
+  
+  /** Multiple servers for parallel deployment */
+  servers?: ServerConfig[];
 
   // Legacy fields for backwards compatibility
   /** @deprecated Use sourceDir instead */
@@ -94,6 +105,28 @@ export const DEFAULT_ARTIFACTS = [
   'package.json',
   'ecosystem.config.cjs'
 ];
+
+/**
+ * Get all servers from a service config
+ * Handles both single 'server' and multiple 'servers' config
+ */
+export function getServers(config: ServiceConfig): ServerConfig[] {
+  if (config.servers && config.servers.length > 0) {
+    return config.servers;
+  }
+  if (config.server) {
+    return [config.server];
+  }
+  throw new Error('No server configuration found. Specify either "server" or "servers" in config.');
+}
+
+/**
+ * Get the primary server (first one) from config
+ */
+export function getPrimaryServer(config: ServiceConfig): ServerConfig {
+  const servers = getServers(config);
+  return servers[0];
+}
 
 /**
  * Parse SSH options to extract port

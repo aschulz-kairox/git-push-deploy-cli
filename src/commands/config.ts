@@ -2,9 +2,18 @@ import chalk from 'chalk';
 import * as readline from 'readline';
 import { existsSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
-import type { DeployConfig, ServiceConfig } from '../config/types.js';
+import { getServers, type DeployConfig, type ServiceConfig, type ServerConfig } from '../config/types.js';
 
 const CONFIG_FILENAME = '.git-deploy.json';
+
+/**
+ * Get the primary server from config (handles both server and servers)
+ */
+function getExistingServer(config?: ServiceConfig): ServerConfig | undefined {
+  if (!config) return undefined;
+  if (config.servers && config.servers.length > 0) return config.servers[0];
+  return config.server;
+}
 
 /**
  * Create readline interface
@@ -152,13 +161,13 @@ async function createServiceConfig(rl: readline.Interface, existingConfig?: Serv
   console.log(chalk.blue('Server Configuration'));
   console.log(chalk.gray('─'.repeat(40)));
   
-  const host = await prompt(rl, 'SSH host (user@hostname)', existingConfig?.server?.host || 'deploy@localhost');
-  const sshOptions = await prompt(rl, 'SSH options (e.g., -p 22)', existingConfig?.server?.sshOptions || '');
-  const targetDir = await prompt(rl, 'Target directory on server', existingConfig?.server?.targetDir || `/opt/${processName}`);
-  const bareRepo = await prompt(rl, 'Bare repo path on server', existingConfig?.server?.bareRepo || `/git/deploy-${processName}`);
+  const host = await prompt(rl, 'SSH host (user@hostname)', getExistingServer(existingConfig)?.host || 'deploy@localhost');
+  const sshOptions = await prompt(rl, 'SSH options (e.g., -p 22)', getExistingServer(existingConfig)?.sshOptions || '');
+  const targetDir = await prompt(rl, 'Target directory on server', getExistingServer(existingConfig)?.targetDir || `/opt/${processName}`);
+  const bareRepo = await prompt(rl, 'Bare repo path on server', getExistingServer(existingConfig)?.bareRepo || `/git/deploy-${processName}`);
   
-  const useGroup = await promptYesNo(rl, 'Use shared Unix group?', !!existingConfig?.server?.group);
-  const group = useGroup ? await prompt(rl, 'Group name', existingConfig?.server?.group || 'deploy') : undefined;
+  const useGroup = await promptYesNo(rl, 'Use shared Unix group?', !!getExistingServer(existingConfig)?.group);
+  const group = useGroup ? await prompt(rl, 'Group name', getExistingServer(existingConfig)?.group || 'deploy') : undefined;
   
   // Environment variables
   console.log('');
@@ -190,6 +199,15 @@ async function createServiceConfig(rl: readline.Interface, existingConfig?: Serv
     }
   }
   
+  // Build server config
+  const serverConfig: ServerConfig = {
+    host,
+    targetDir,
+    bareRepo,
+  };
+  if (sshOptions) serverConfig.sshOptions = sshOptions;
+  if (group) serverConfig.group = group;
+  
   const config: ServiceConfig = {
     sourceDir,
     deployRepo,
@@ -197,15 +215,9 @@ async function createServiceConfig(rl: readline.Interface, existingConfig?: Serv
     processManager,
     processName,
     environment,
-    server: {
-      host,
-      targetDir,
-      bareRepo,
-    }
+    server: serverConfig
   };
   
-  if (sshOptions) config.server.sshOptions = sshOptions;
-  if (group) config.server.group = group;
   if (pm2Home) config.pm2Home = pm2Home;
   if (pm2User) config.pm2User = pm2User;
   if (gpddWorkers) config.gpddWorkers = gpddWorkers;
@@ -234,9 +246,18 @@ export async function configCommand(options: ConfigOptions = {}): Promise<void> 
     } else {
       console.log(chalk.blue('Configured services:'));
       for (const [name, svc] of Object.entries(config.services)) {
+        const servers = getServers(svc);
         console.log(`  ${chalk.white(name)}`);
-        console.log(chalk.gray(`    Host: ${svc.server.host}`));
-        console.log(chalk.gray(`    Target: ${svc.server.targetDir}`));
+        if (servers.length === 1) {
+          console.log(chalk.gray(`    Host: ${servers[0].host}`));
+          console.log(chalk.gray(`    Target: ${servers[0].targetDir}`));
+        } else {
+          console.log(chalk.gray(`    Servers: ${servers.length}`));
+          for (const server of servers) {
+            const label = server.name || server.host;
+            console.log(chalk.gray(`      - ${label}: ${server.targetDir}`));
+          }
+        }
       }
     }
     return;

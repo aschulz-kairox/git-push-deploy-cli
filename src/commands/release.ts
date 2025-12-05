@@ -1,5 +1,7 @@
 import chalk from 'chalk';
+import { execSync } from 'child_process';
 import { getServiceConfig, getWorkspaceRoot, getDeployRepoPath } from '../config/loader.js';
+import { getServers, getPrimaryServer, parseSshPort, buildSshUrl } from '../config/types.js';
 import { gitAddAll, gitCommit, gitPush, hasChanges, getCurrentBranch, getGitStatus } from '../utils/git.js';
 import { exists } from '../utils/files.js';
 import { joinPath } from '../utils/files.js';
@@ -9,14 +11,68 @@ interface ReleaseOptions {
 }
 
 /**
+ * Ensure remotes are set up for all servers
+ * Creates remote-0, remote-1, etc. for each server
+ */
+function ensureRemotes(deployRepoPath: string, serviceName: string): void {
+  const config = getServiceConfig(serviceName);
+  const servers = getServers(config);
+  
+  // Get existing remotes
+  let existingRemotes: string[] = [];
+  try {
+    const output = execSync('git remote', { cwd: deployRepoPath, encoding: 'utf-8' });
+    existingRemotes = output.trim().split('\n').filter(r => r);
+  } catch {
+    // No remotes yet
+  }
+  
+  // For single server, use 'origin'
+  if (servers.length === 1) {
+    const server = servers[0];
+    const port = parseSshPort(server.sshOptions);
+    const sshUrl = buildSshUrl(server.host, server.bareRepo, port);
+    
+    if (!existingRemotes.includes('origin')) {
+      execSync(`git remote add origin ${sshUrl}`, { cwd: deployRepoPath, stdio: 'pipe' });
+    } else {
+      execSync(`git remote set-url origin ${sshUrl}`, { cwd: deployRepoPath, stdio: 'pipe' });
+    }
+    return;
+  }
+  
+  // For multi-server, create server-0, server-1, etc.
+  servers.forEach((server, index) => {
+    const remoteName = `server-${index}`;
+    const port = parseSshPort(server.sshOptions);
+    const sshUrl = buildSshUrl(server.host, server.bareRepo, port);
+    
+    if (!existingRemotes.includes(remoteName)) {
+      execSync(`git remote add ${remoteName} ${sshUrl}`, { cwd: deployRepoPath, stdio: 'pipe' });
+    } else {
+      execSync(`git remote set-url ${remoteName} ${sshUrl}`, { cwd: deployRepoPath, stdio: 'pipe' });
+    }
+  });
+  
+  // Also keep 'origin' pointing to primary server for backwards compat
+  const primaryServer = servers[0];
+  const port = parseSshPort(primaryServer.sshOptions);
+  const sshUrl = buildSshUrl(primaryServer.host, primaryServer.bareRepo, port);
+  if (!existingRemotes.includes('origin')) {
+    execSync(`git remote add origin ${sshUrl}`, { cwd: deployRepoPath, stdio: 'pipe' });
+  }
+}
+
+/**
  * Release command - commit and push deploy repository
  * 
- * Pushes to the bare repo on the server, which triggers the post-receive hook.
+ * Pushes to the bare repo on the server(s), which triggers the post-receive hook.
  */
 export async function releaseCommand(serviceName: string, options: ReleaseOptions = {}): Promise<void> {
   console.log(chalk.blue(`Releasing ${serviceName}...`));
   
   const config = getServiceConfig(serviceName);
+  const servers = getServers(config);
   const workspaceRoot = getWorkspaceRoot();
   const deployRepoPath = getDeployRepoPath(config, workspaceRoot);
   
@@ -25,6 +81,9 @@ export async function releaseCommand(serviceName: string, options: ReleaseOption
     console.log(chalk.yellow('No changes to release.'));
     return;
   }
+  
+  // Ensure remotes are configured
+  ensureRemotes(deployRepoPath, serviceName);
   
   // Commit
   const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -37,10 +96,26 @@ export async function releaseCommand(serviceName: string, options: ReleaseOption
     return;
   }
   
-  // Push (this triggers the post-receive hook on the server)
   const branch = getCurrentBranch(deployRepoPath);
-  console.log(chalk.gray(`  Pushing to origin/${branch}...`));
-  gitPush(deployRepoPath, 'origin', branch);
+  
+  // Push to each server
+  if (servers.length === 1) {
+    console.log(chalk.gray(`  Pushing to origin/${branch}...`));
+    gitPush(deployRepoPath, 'origin', branch);
+  } else {
+    console.log(chalk.gray(`  Pushing to ${servers.length} servers...`));
+    for (let i = 0; i < servers.length; i++) {
+      const remoteName = `server-${i}`;
+      const serverLabel = servers[i].name || servers[i].host;
+      console.log(chalk.gray(`    → ${serverLabel}...`));
+      try {
+        gitPush(deployRepoPath, remoteName, branch);
+        console.log(chalk.green(`    ✓ ${serverLabel}`));
+      } catch (error: any) {
+        console.log(chalk.red(`    ✗ ${serverLabel}: ${error.message}`));
+      }
+    }
+  }
   
   console.log(chalk.green(`✓ Released ${serviceName}`));
 }
@@ -52,6 +127,7 @@ export async function releaseCommandDryRun(serviceName: string): Promise<void> {
   console.log(chalk.blue(`[DRY RUN] Release preview for ${serviceName}...`));
   
   const config = getServiceConfig(serviceName);
+  const servers = getServers(config);
   const workspaceRoot = getWorkspaceRoot();
   const deployRepoPath = getDeployRepoPath(config, workspaceRoot);
   
@@ -86,6 +162,13 @@ export async function releaseCommandDryRun(serviceName: string): Promise<void> {
   }
   
   const branch = getCurrentBranch(deployRepoPath);
-  console.log(chalk.gray(`  Would push to: origin/${branch}`));
-  console.log(chalk.gray(`  Server: ${config.server.host}`));
+  if (servers.length === 1) {
+    console.log(chalk.gray(`  Would push to: origin/${branch}`));
+    console.log(chalk.gray(`  Server: ${servers[0].host}`));
+  } else {
+    console.log(chalk.gray(`  Would push to ${servers.length} servers:`));
+    servers.forEach((s, i) => {
+      console.log(chalk.gray(`    server-${i}: ${s.name || s.host}`));
+    });
+  }
 }

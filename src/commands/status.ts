@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { loadConfig, listServices } from '../config/loader.js';
+import { getServers } from '../config/types.js';
 
 /**
  * Status command - show all configured services
@@ -16,12 +17,23 @@ export async function statusCommand(): Promise<void> {
     console.log(chalk.white('Configured Services:'));
     for (const name of services) {
       const svc = config.services[name];
+      const servers = getServers(svc);
       console.log(chalk.gray(`  ${name}`));
-      console.log(chalk.gray(`    Host: ${svc.server.host}`));
+      if (servers.length === 1) {
+        console.log(chalk.gray(`    Host: ${servers[0].host}`));
+      } else {
+        console.log(chalk.gray(`    Servers: ${servers.length}`));
+        for (const server of servers) {
+          const label = server.name || server.host;
+          console.log(chalk.gray(`      - ${label}`));
+        }
+      }
       console.log(chalk.gray(`    Process: ${svc.processName}`));
       console.log(chalk.gray(`    Source: ${svc.sourceDir}`));
       console.log(chalk.gray(`    Deploy: ${svc.sourceDir}/${svc.deployRepo}`));
-      console.log(chalk.gray(`    Target: ${svc.server.targetDir}`));
+      if (servers.length === 1) {
+        console.log(chalk.gray(`    Target: ${servers[0].targetDir}`));
+      }
       if (svc.environment) {
         console.log(chalk.gray(`    Environment: ${svc.environment}`));
       }

@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { getServiceConfig } from '../config/loader.js';
+import { getServers, type ServerConfig } from '../config/types.js';
 import { sshExec, checkSshConnection, findSshPublicKey, copySshKey } from '../utils/shell.js';
 import * as readline from 'readline';
 
@@ -159,35 +160,62 @@ export async function initCommand(serviceName: string, _options: InitOptions = {
   console.log(chalk.blue(`Initializing ${serviceName}...`));
   
   const config = getServiceConfig(serviceName);
-  const { host, bareRepo, targetDir, sshOptions, group } = config.server;
+  const servers = getServers(config);
   const { pm2User, pm2Home } = config;
   
-  console.log(chalk.gray(`  Host: ${host}`));
-  console.log(chalk.gray(`  Bare repo: ${bareRepo}`));
-  console.log(chalk.gray(`  Target dir: ${targetDir}`));
-  if (group) console.log(chalk.gray(`  Group: ${group}`));
+  console.log(chalk.gray(`  Servers: ${servers.length}`));
   if (pm2User) console.log(chalk.gray(`  PM2 user: ${pm2User}`));
   console.log('');
   
+  // Initialize each server
+  for (const server of servers) {
+    await initServer(serviceName, server, config, _options);
+    if (servers.length > 1) console.log('');
+  }
+  
+  console.log(chalk.green(`✓ Initialized ${serviceName} on ${servers.length} server(s)`));
+  console.log('');
+  console.log(chalk.gray('Server setup complete. Now you can deploy:'));
+  console.log(chalk.white(`  gpd deploy ${serviceName}`));
+}
+
+/**
+ * Initialize a single server
+ */
+async function initServer(
+  serviceName: string, 
+  server: ServerConfig,
+  config: { pm2User?: string; pm2Home?: string },
+  options: InitOptions
+): Promise<void> {
+  const { host, bareRepo, targetDir, sshOptions, group } = server;
+  const { pm2User, pm2Home } = config;
+  const serverLabel = server.name || host;
+  
+  console.log(chalk.blue(`  Setting up ${serverLabel}...`));
+  console.log(chalk.gray(`    Host: ${host}`));
+  console.log(chalk.gray(`    Bare repo: ${bareRepo}`));
+  console.log(chalk.gray(`    Target dir: ${targetDir}`));
+  if (group) console.log(chalk.gray(`    Group: ${group}`));
+  
   // 0. Check SSH connection first
-  if (!_options.skipSshCheck) {
+  if (!options.skipSshCheck) {
     const sshReady = await ensureSshConnection(host, sshOptions);
     if (!sshReady) {
-      console.log(chalk.red('Aborting. Fix SSH connection and try again.'));
-      process.exit(1);
+      console.log(chalk.red(`  Skipping ${serverLabel} - SSH connection failed`));
+      return;
     }
-    console.log('');
   }
   
   // 1. Create group if specified
   if (group) {
-    console.log(chalk.gray(`  Creating group ${group}...`));
+    console.log(chalk.gray(`    Creating group ${group}...`));
     const createGroupCmd = `sudo groupadd -f ${group} && sudo usermod -aG ${group} $(whoami)`;
     sshExec(host, createGroupCmd, { sshOptions });
   }
   
   // 2. Create bare repo with shared group access
-  console.log(chalk.gray(`  Creating bare repo...`));
+  console.log(chalk.gray(`    Creating bare repo...`));
   const bareRepoParent = bareRepo.split('/').slice(0, -1).join('/');
   let createBareCmd = `sudo mkdir -p ${bareRepoParent}`;
   if (group) {
@@ -200,7 +228,7 @@ export async function initCommand(serviceName: string, _options: InitOptions = {
   sshExec(host, createBareCmd, { sshOptions });
   
   // 3. Create target directory
-  console.log(chalk.gray(`  Creating target directory...`));
+  console.log(chalk.gray(`    Creating target directory...`));
   const targetParent = targetDir.split('/').slice(0, -1).join('/');
   let createTargetCmd = `sudo mkdir -p ${targetDir}`;
   if (pm2User) {
@@ -212,7 +240,7 @@ export async function initCommand(serviceName: string, _options: InitOptions = {
   sshExec(host, createTargetCmd, { sshOptions });
   
   // 4. Create post-receive hook
-  console.log(chalk.gray(`  Creating post-receive hook...`));
+  console.log(chalk.gray(`    Creating post-receive hook...`));
   const hookContent = generatePostReceiveHook(serviceName, {
     targetDir,
     bareRepo,
@@ -231,7 +259,7 @@ export async function initCommand(serviceName: string, _options: InitOptions = {
   }
   
   // 5. Create log file
-  console.log(chalk.gray(`  Creating log file...`));
+  console.log(chalk.gray(`    Creating log file...`));
   const logFile = `/var/log/gpd-${serviceName}.log`;
   let createLogCmd = `sudo touch ${logFile} && sudo chmod 666 ${logFile}`;
   if (group) {
@@ -239,8 +267,5 @@ export async function initCommand(serviceName: string, _options: InitOptions = {
   }
   sshExec(host, createLogCmd, { sshOptions });
   
-  console.log(chalk.green(`✓ Initialized ${serviceName}`));
-  console.log('');
-  console.log(chalk.gray('Server setup complete. Now you can deploy:'));
-  console.log(chalk.white(`  gpd deploy ${serviceName}`));
+  console.log(chalk.green(`  ✓ Initialized on ${serverLabel}`));
 }

@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { spawn } from 'child_process';
 import { getServiceConfig } from '../config/loader.js';
+import { getPrimaryServer } from '../config/types.js';
 
 interface LogsOptions {
   lines?: string;
@@ -9,10 +10,12 @@ interface LogsOptions {
 
 /**
  * Logs command - show PM2 logs from server via SSH
+ * Note: For multi-server, shows logs from primary server only
  */
 export async function logsCommand(serviceName: string, options: LogsOptions = {}): Promise<void> {
   const config = getServiceConfig(serviceName);
-  const { host, sshOptions } = config.server;
+  const primaryServer = getPrimaryServer(config);
+  const { host, sshOptions } = primaryServer;
   const { processName, pm2Home } = config;
   const lines = options.lines || '50';
   

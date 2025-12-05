@@ -1,5 +1,6 @@
 import chalk from 'chalk';
-import { getServiceConfig, getWorkspaceRoot } from '../config/loader.js';
+import { getServiceConfig } from '../config/loader.js';
+import { getServers } from '../config/types.js';
 import { runSshCommand } from '../utils/shell.js';
 
 interface DaemonOptions {
@@ -16,7 +17,7 @@ interface DaemonOptions {
  */
 export async function daemonCommand(serviceName: string, action: string): Promise<void> {
   const config = getServiceConfig(serviceName);
-  const { host, sshOptions, targetDir } = config.server;
+  const servers = getServers(config);
   
   if (config.processManager !== 'gpdd') {
     console.log(chalk.yellow(`Service ${serviceName} uses ${config.processManager || 'pm2'}, not gpdd`));
@@ -24,46 +25,53 @@ export async function daemonCommand(serviceName: string, action: string): Promis
     return;
   }
   
-  console.log(chalk.blue(`GPDD ${action} for ${serviceName}...`));
-  console.log(chalk.gray(`  Host: ${host}`));
-  console.log(chalk.gray(`  Target: ${targetDir}`));
-  console.log('');
+  // Run on all servers
+  for (const server of servers) {
+    const { host, sshOptions, targetDir } = server;
+    const serverLabel = server.name || host;
+    
+    console.log(chalk.blue(`GPDD ${action} on ${serverLabel}...`));
+    console.log(chalk.gray(`  Host: ${host}`));
+    console.log(chalk.gray(`  Target: ${targetDir}`));
+    console.log('');
   
-  const runUser = config.pm2User;
-  let cmd: string;
+    const runUser = config.pm2User;
+    let cmd: string;
   
-  switch (action) {
-    case 'status':
-      cmd = `cd "${targetDir}" && gpdd status`;
-      break;
-    case 'reload':
-      cmd = `cd "${targetDir}" && gpdd reload`;
-      break;
-    case 'stop':
-      cmd = `cd "${targetDir}" && gpdd stop`;
-      break;
-    case 'start':
-      const entryPoint = config.gpddEntryPoint || 'dist/index.js';
-      const workers = config.gpddWorkers ? `-w ${config.gpddWorkers}` : '';
-      cmd = `cd "${targetDir}" && gpdd start ${entryPoint} ${workers}`;
-      break;
-    default:
-      console.error(chalk.red(`Unknown action: ${action}`));
-      console.log('Available actions: status, reload, stop, start');
-      return;
-  }
+    switch (action) {
+      case 'status':
+        cmd = `cd "${targetDir}" && gpdd status`;
+        break;
+      case 'reload':
+        cmd = `cd "${targetDir}" && gpdd reload`;
+        break;
+      case 'stop':
+        cmd = `cd "${targetDir}" && gpdd stop`;
+        break;
+      case 'start':
+        const entryPoint = config.gpddEntryPoint || 'dist/index.js';
+        const workers = config.gpddWorkers ? `-w ${config.gpddWorkers}` : '';
+        cmd = `cd "${targetDir}" && gpdd start ${entryPoint} ${workers}`;
+        break;
+      default:
+        console.error(chalk.red(`Unknown action: ${action}`));
+        console.log('Available actions: status, reload, stop, start');
+        return;
+    }
   
-  // If running as different user, wrap in sudo
-  if (runUser) {
-    cmd = `sudo -u ${runUser} bash -c '${cmd.replace(/'/g, "'\\''")}'`;
-  }
+    // If running as different user, wrap in sudo
+    if (runUser) {
+      cmd = `sudo -u ${runUser} bash -c '${cmd.replace(/'/g, "'\\''")}'`;
+    }
   
-  try {
-    const output = await runSshCommand(host, cmd, sshOptions);
-    console.log(output);
-    console.log(chalk.green(`✓ ${action} completed`));
-  } catch (error: any) {
-    console.error(chalk.red(`Failed: ${error.message}`));
-    process.exit(1);
+    try {
+      const output = await runSshCommand(host, cmd, sshOptions);
+      console.log(output);
+      console.log(chalk.green(`✓ ${action} completed on ${serverLabel}`));
+    } catch (error: any) {
+      console.error(chalk.red(`Failed on ${serverLabel}: ${error.message}`));
+    }
+    
+    if (servers.length > 1) console.log('');
   }
 }
