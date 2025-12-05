@@ -95,10 +95,12 @@ function generatePostReceiveHook(serviceName: string, config: {
   
   if (pm2User) {
     // sudo -E doesn't work reliably, so we pass vars explicitly
+    // GPD_PM2_USER tells install.ts which user context we're running as
     const envVars = [
       `GPD_TARGET_DIR="${targetDir}"`,
       `GPD_GIT_DIR="${bareRepo}"`,
       `GPD_SERVICE="${serviceName}"`,
+      `GPD_PM2_USER="${pm2User}"`,
     ];
     if (pm2Home) {
       envVars.push(`PM2_HOME="${pm2Home}"`);

@@ -115,37 +115,29 @@ export async function installCommand(serviceName: string, options: InstallOption
   }
 
   // 2. Generate .env file from config
+  // Note: When running via hook with sudo -u <user>, we're already that user
+  // so files we create already have correct ownership
   if (env && Object.keys(env).length > 0) {
     console.log(chalk.blue('Generating .env file...'));
     const envPath = join(targetDir, '.env');
     const envContent = generateEnvContent(env);
     writeFileSync(envPath, envContent + '\n');
     console.log(chalk.gray(`  Written to ${envPath}`));
-    
-    // Fix ownership if running as different user
-    if (effectivePm2User) {
-      exec(`sudo chown ${effectivePm2User}:${effectivePm2User} "${envPath}"`, { silent: true });
-    }
   }
 
   // 3. Create logs directory if needed
+  // Note: We're running as the target user, so new dirs have correct ownership
   const logsDir = join(targetDir, 'logs');
   if (!existsSync(logsDir)) {
     mkdirSync(logsDir, { recursive: true });
-    if (effectivePm2User) {
-      exec(`sudo chown ${effectivePm2User}:${effectivePm2User} "${logsDir}"`, { silent: true });
-    }
     console.log(chalk.gray(`  Created ${logsDir}`));
   }
 
   // 4. npm install
+  // Note: When invoked via hook, we're already running as the correct user
   console.log(chalk.blue('Installing dependencies...'));
-  const npmCmd = `npm install --omit=dev --cache=/opt/kairox/.npm`;
-  if (effectivePm2User) {
-    execAsUser(npmCmd, effectivePm2User, { cwd: targetDir, env: cmdEnv });
-  } else {
-    exec(npmCmd, { cwd: targetDir });
-  }
+  const npmCmd = `npm install --omit=dev`;
+  exec(npmCmd, { cwd: targetDir });
 
   // 5. Run post-deploy hooks (server-side, after npm install)
   if (config.hooks?.postDeploy && config.hooks.postDeploy.length > 0) {
@@ -153,11 +145,7 @@ export async function installCommand(serviceName: string, options: InstallOption
     for (const hookCmd of config.hooks.postDeploy) {
       console.log(chalk.gray(`  $ ${hookCmd}`));
       try {
-        if (effectivePm2User) {
-          execAsUser(hookCmd, effectivePm2User, { cwd: targetDir, env: cmdEnv });
-        } else {
-          exec(hookCmd, { cwd: targetDir });
-        }
+        exec(hookCmd, { cwd: targetDir });
       } catch (error) {
         console.log(chalk.red(`  ✗ Hook failed: ${hookCmd}`));
         // Continue with other hooks, but warn
@@ -167,12 +155,11 @@ export async function installCommand(serviceName: string, options: InstallOption
 
   // 6. Restart process manager
   const processManager = config.processManager || 'pm2';
-  const runUser = effectivePm2User || process.env.USER || 'root';
   
   if (processManager === 'gpdd') {
-    await restartWithGpdd(config, targetDir, runUser, cmdEnv);
+    await restartWithGpdd(config, targetDir, cmdEnv);
   } else if (processManager === 'pm2') {
-    await restartWithPm2(config, targetDir, runUser, cmdEnv);
+    await restartWithPm2(config, targetDir, cmdEnv);
   } else {
     console.log(chalk.yellow(`Unsupported process manager: ${processManager}`));
   }
@@ -186,7 +173,6 @@ export async function installCommand(serviceName: string, options: InstallOption
 async function restartWithPm2(
   config: ServiceConfig, 
   targetDir: string, 
-  runUser: string, 
   cmdEnv: Record<string, string>
 ): Promise<void> {
   const { processName, pm2Home, pm2User } = config;
@@ -233,7 +219,6 @@ async function restartWithPm2(
 async function restartWithGpdd(
   config: ServiceConfig,
   targetDir: string,
-  runUser: string,
   cmdEnv: Record<string, string>
 ): Promise<void> {
   const entryPoint = config.gpddEntryPoint || 'dist/index.js';
