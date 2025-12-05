@@ -1,8 +1,6 @@
 import chalk from 'chalk';
 import { spawn } from 'child_process';
 import { getServiceConfig } from '../config/loader.js';
-import { exec } from '../utils/shell.js';
-import { exists } from '../utils/files.js';
 
 interface LogsOptions {
   lines?: string;
@@ -10,41 +8,38 @@ interface LogsOptions {
 }
 
 /**
- * Logs command - show deployment logs
+ * Logs command - show PM2 logs from server via SSH
  */
 export async function logsCommand(serviceName: string, options: LogsOptions = {}): Promise<void> {
+  const config = getServiceConfig(serviceName);
+  const { host } = config.server;
+  const { processName, pm2Home } = config;
   const lines = options.lines || '50';
-  const logFile = `/var/log/deploy-${serviceName}.log`;
   
-  // Check if log file exists
-  if (!exists(logFile)) {
-    // Try to get config to show better error message
-    try {
-      getServiceConfig(serviceName);
-      console.log(chalk.yellow(`Log file not found: ${logFile}`));
-      console.log(chalk.gray('The service may not have been deployed yet.'));
-    } catch {
-      console.log(chalk.red(`Unknown service: ${serviceName}`));
-    }
-    return;
-  }
+  const pm2Env = pm2Home ? `PM2_HOME=${pm2Home}` : '';
+  
+  console.log(chalk.blue(`Logs for ${serviceName} from ${host}...`));
+  console.log('');
   
   if (options.follow) {
-    console.log(chalk.blue(`Following logs for ${serviceName} (Ctrl+C to exit)...`));
-    console.log('');
-    
-    // Use spawn for follow mode
-    const tail = spawn('tail', ['-f', '-n', lines, logFile], {
+    // Use spawn for follow mode with SSH
+    const sshArgs = [host, `${pm2Env} pm2 logs ${processName} --lines ${lines}`];
+    const ssh = spawn('ssh', sshArgs, {
       stdio: 'inherit'
     });
     
-    tail.on('error', (error) => {
+    ssh.on('error', (error) => {
       console.error(chalk.red(`Error: ${error.message}`));
     });
   } else {
-    console.log(chalk.blue(`Deployment logs for ${serviceName} (last ${lines} lines):`));
-    console.log('');
+    // Non-follow mode: get last N lines
+    const sshArgs = [host, `${pm2Env} pm2 logs ${processName} --lines ${lines} --nostream`];
+    const ssh = spawn('ssh', sshArgs, {
+      stdio: 'inherit'
+    });
     
-    exec(`tail -n ${lines} ${logFile}`);
+    ssh.on('error', (error) => {
+      console.error(chalk.red(`Error: ${error.message}`));
+    });
   }
 }

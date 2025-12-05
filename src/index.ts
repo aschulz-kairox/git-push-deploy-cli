@@ -5,7 +5,6 @@ import { stageCommand } from './commands/stage.js';
 import { releaseCommand } from './commands/release.js';
 import { deployCommand } from './commands/deploy.js';
 import { initCommand } from './commands/init.js';
-import { installCommand } from './commands/install.js';
 import { statusCommand } from './commands/status.js';
 import { logsCommand } from './commands/logs.js';
 
@@ -30,31 +29,25 @@ program
 
 program
   .command('deploy <service>')
-  .description('Stage and release in one step')
+  .description('Stage, release, and install on server via SSH')
   .option('-m, --message <message>', 'Commit message')
+  .option('--skip-remote', 'Skip remote install (only stage and release)')
   .action(deployCommand);
 
-// Server commands
+// Server setup command
 program
   .command('init <service>')
-  .description('Initialize bare repo, hook, and permissions on server')
-  .option('--users <users>', 'Comma-separated list of users to add to group')
+  .description('Initialize bare repo and clone on server via SSH')
   .action(initCommand);
 
 program
-  .command('install <service>')
-  .description('Extract, npm install, pm2 restart (used by post-receive hook)')
-  .option('--ref <ref>', 'Git ref to deploy (branch or tag)', 'main')
-  .action(installCommand);
-
-program
   .command('status')
-  .description('Show all services and PM2 status')
+  .description('Show all configured services')
   .action(statusCommand);
 
 program
   .command('logs <service>')
-  .description('Show deployment logs')
+  .description('Show PM2 logs from server via SSH')
   .option('-n, --lines <lines>', 'Number of lines to show', '50')
   .option('-f, --follow', 'Follow log output')
   .action(logsCommand);

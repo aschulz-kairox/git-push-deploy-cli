@@ -1,30 +1,24 @@
 # git-push-deploy-cli (gpd)
 
-Git Push Deploy - A CLI for git-based deployments with PM2/systemd support. Push to deploy Node.js applications using bare git repositories and post-receive hooks.
+Git Push Deploy - A CLI for git-based deployments with PM2 support. Push to deploy Node.js applications via SSH.
 
 ## Features
 
-- **Git-based deployment**: Push to deploy using bare repositories
-- **PM2 integration**: Automatic process management and restarts
+- **Git-based deployment**: Push to bare repo, SSH triggers install
+- **PM2 integration**: Automatic process restarts
 - **Monorepo support**: Stage multiple packages for deployment
-- **Cross-platform**: Works on Linux servers and Windows/Mac dev machines
+- **SSH orchestration**: Everything runs from your dev machine
 - **Config-driven**: Define services in `.git-deploy.json`
 
 ## Installation
 
 ```bash
-# Global installation (recommended for servers)
 npm install -g git-push-deploy-cli
-
-# Or use npx
-npx git-push-deploy-cli <command>
 ```
 
 ## Quick Start
 
-### 1. Create config file
-
-Create `.git-deploy.json` in your workspace root:
+### 1. Create `.git-deploy.json` in your workspace root:
 
 ```json
 {
@@ -33,11 +27,13 @@ Create `.git-deploy.json` in your workspace root:
       "packages": ["my-api"],
       "mainPackage": "my-api",
       "deployRepo": "../deploy-my-api",
-      "pm2Name": "my-api",
+      "processName": "my-api",
+      "pm2Home": "/opt/myapp/.pm2",
+      "artifacts": ["dist", "package.json", "package-lock.json", "ecosystem.config.cjs"],
       "server": {
+        "host": "user@myserver",
         "targetDir": "/opt/myapp/my-api",
-        "bareRepo": "/git/deploy-my-api",
-        "user": "myapp"
+        "bareRepo": "/git/deploy-my-api"
       }
     }
   }
@@ -47,140 +43,89 @@ Create `.git-deploy.json` in your workspace root:
 ### 2. Initialize server (once per service)
 
 ```bash
-# On the server
-sudo gpd init my-api
+gpd init my-api
 ```
 
-This creates:
+This creates via SSH:
 - Bare git repository at `/git/deploy-my-api`
-- Post-receive hook for automatic deployment
-- Log file at `/var/log/deploy-my-api.log`
-- Unix group `deploy-my-api` with appropriate permissions
+- Clone at `/opt/myapp/my-api`
 
-### 3. Deploy from dev machine
+### 3. Deploy
 
 ```bash
-# Build, stage, and push
 gpd deploy my-api
-
-# Or step by step:
-gpd stage my-api    # Copy build artifacts to deploy repo
-gpd release my-api  # Commit and push
 ```
+
+This:
+1. Copies build artifacts to local deploy repo
+2. Commits and pushes to bare repo on server
+3. SSH: `git pull && npm install && pm2 restart`
 
 ## Commands
 
-### Development Commands
-
 | Command | Description |
 |---------|-------------|
+| `gpd status` | Show all configured services |
 | `gpd stage <service>` | Copy build artifacts to deploy repo |
 | `gpd release <service>` | Commit and push deploy repo |
-| `gpd deploy <service>` | Stage + release in one step |
+| `gpd deploy <service>` | Stage + release + SSH install |
+| `gpd init <service>` | Initialize bare repo and clone on server |
+| `gpd logs <service>` | Show PM2 logs from server via SSH |
 
-### Server Commands
+## Options
 
-| Command | Description |
-|---------|-------------|
-| `gpd init <service>` | Initialize bare repo, hook, and permissions |
-| `gpd install <service>` | Extract, npm install, pm2 restart (used by hook) |
-| `gpd status` | Show all services and PM2 status |
-| `gpd logs <service>` | Show deployment logs |
+```bash
+gpd deploy my-api -m "custom commit message"
+gpd deploy my-api --skip-remote    # Only stage and release, no SSH
+gpd logs my-api -f                 # Follow logs
+gpd logs my-api -n 100             # Show last 100 lines
+```
 
-## Configuration
+## Config Reference
 
-### .git-deploy.json
-
-```json
-{
-  "services": {
-    "<service-name>": {
-      "packages": ["pkg1", "pkg2"],
-      "mainPackage": "pkg1",
-      "deployRepo": "../deploy-<service>",
-      "pm2Name": "<pm2-process-name>",
-      "pm2Home": "/opt/myapp/.pm2",
-      "artifacts": ["dist", "package.json", "package-lock.json"],
-      "server": {
-        "targetDir": "/opt/myapp/<service>",
-        "bareRepo": "/git/deploy-<service>",
-        "user": "myapp",
-        "group": "deploy-<service>"
-      }
-    }
-  }
+```typescript
+interface ServiceConfig {
+  packages: string[];        // Packages to deploy (monorepo)
+  mainPackage: string;       // Package with ecosystem.config.cjs
+  deployRepo: string;        // Local deploy repo path
+  processName: string;       // PM2 process name
+  pm2Home?: string;          // PM2_HOME on server
+  artifacts?: string[];      // Files to copy (default: dist, package.json, etc.)
+  server: {
+    host: string;            // SSH host (user@hostname)
+    targetDir: string;       // Clone directory on server
+    bareRepo: string;        // Bare repo path on server
+  };
 }
 ```
 
-### Configuration Options
-
-| Option | Required | Description |
-|--------|----------|-------------|
-| `packages` | Yes | Packages to deploy (monorepo support) |
-| `mainPackage` | Yes | Package with package.json for npm install |
-| `deployRepo` | Yes | Path to local deploy repository |
-| `pm2Name` | Yes | PM2 process name |
-| `pm2Home` | No | PM2 home directory (default: ~/.pm2) |
-| `artifacts` | No | Files/dirs to copy (default: dist, package.json, package-lock.json) |
-| `server.targetDir` | Yes | Where to install on server |
-| `server.bareRepo` | Yes | Path to bare git repo on server |
-| `server.user` | No | Unix user for file ownership |
-| `server.group` | No | Unix group (default: deploy-<service>) |
-
-## How It Works
+## Workflow
 
 ```
-[Dev Machine]                    [Server]
-     │                               │
-     │  npm run build                │
-     ▼                               │
-┌─────────────┐                      │
-│ dist/       │                      │
-│ package.json│                      │
-└─────────────┘                      │
-     │                               │
-     │  git-deploy stage             │
-     ▼                               │
-┌─────────────┐                      │
-│ deploy-repo/│                      │
-│  └─ my-api/ │                      │
-└─────────────┘                      │
-     │                               │
-     │  git-deploy release           │
-     │  (git push)                   │
-     ▼                               ▼
-              ─────────────────────►
-                                ┌─────────────┐
-                                │ bare repo   │
-                                │ post-receive│
-                                └─────────────┘
-                                     │
-                                     │  git-deploy install
-                                     ▼
-                                ┌─────────────┐
-                                │ /opt/myapp/ │
-                                │ npm install │
-                                │ pm2 restart │
-                                └─────────────┘
+Dev Machine                           Server
+───────────                           ──────
+gpd deploy my-api
+  │
+  ├─ gpd stage
+  │    └─ Copy artifacts → ../deploy-my-api/
+  │
+  ├─ gpd release  
+  │    └─ git push ──────────────────→ /git/deploy-my-api (bare)
+  │
+  └─ SSH ────────────────────────────→ cd /opt/myapp/my-api
+                                       git pull
+                                       npm install --omit=dev
+                                       pm2 restart my-api
 ```
 
-## Integration with npm scripts
+## Server Prerequisites
 
-```json
-{
-  "scripts": {
-    "predeploy": "npm version patch && npm run build",
-    "deploy": "gpd deploy my-api"
-  }
-}
-```
-
-## Requirements
-
-- Node.js >= 18
+- Node.js + npm
+- PM2 (`npm install -g pm2`)
+- SSH access from dev machine
 - Git
-- PM2 (on server)
-- Linux server (Debian, Ubuntu, Raspberry Pi OS, etc.)
+
+No gpd installation needed on the server!
 
 ## License
 

@@ -51,3 +51,13 @@ export function isRoot(): boolean {
 export function getCurrentUser(): string {
   return process.env.USER || process.env.USERNAME || 'unknown';
 }
+
+/**
+ * Execute a command on a remote host via SSH
+ */
+export function sshExec(host: string, command: string, options: { silent?: boolean } = {}): string {
+  // Escape single quotes in command for SSH
+  const escapedCmd = command.replace(/'/g, "'\\''");
+  const sshCommand = `ssh ${host} '${escapedCmd}'`;
+  return exec(sshCommand, { silent: options.silent });
+}

@@ -1,4 +1,7 @@
-import type { ProcessManagerType } from '../utils/process-manager.js';
+/**
+ * Process manager type
+ */
+export type ProcessManagerType = 'pm2' | 'systemd';
 
 /**
  * Service configuration for git-deploy
@@ -24,20 +27,17 @@ export interface ServiceConfig {
   
   /** Files/dirs to copy (default: dist, package.json, package-lock.json) */
   artifacts?: string[];
-  
+
   /** Server-side configuration */
   server: {
-    /** Where to install on server */
+    /** SSH host (user@hostname) */
+    host: string;
+    
+    /** Where to install on server (clone of bare repo) */
     targetDir: string;
     
     /** Path to bare git repo on server */
     bareRepo: string;
-    
-    /** Unix user for file ownership */
-    user?: string;
-    
-    /** Unix group (default: deploy-<service>) */
-    group?: string;
   };
 }
 
