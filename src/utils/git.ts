@@ -136,6 +136,28 @@ export function getCurrentCommit(repoDir: string): string {
 }
 
 /**
+ * Get last commit hash (short form)
+ */
+export function getLastCommitHash(repoDir: string): string {
+  try {
+    return execOutput('git rev-parse --short HEAD', repoDir);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Get last commit message (first line)
+ */
+export function getLastCommitMessage(repoDir: string): string {
+  try {
+    return execOutput('git log -1 --format=%s', repoDir);
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Get commit hash by reference (tag, branch, HEAD~n, etc.)
  */
 export function getCommitByRef(repoDir: string, ref: string): string {

@@ -23,6 +23,73 @@ export interface HooksConfig {
 }
 
 /**
+ * Slack notification configuration
+ */
+export interface SlackNotificationConfig {
+  /** Slack webhook URL */
+  webhookUrl: string;
+  /** Channel override (optional, uses webhook default) */
+  channel?: string;
+  /** Username override */
+  username?: string;
+  /** Only notify on failure */
+  onlyOnFailure?: boolean;
+}
+
+/**
+ * Discord notification configuration
+ */
+export interface DiscordNotificationConfig {
+  /** Discord webhook URL */
+  webhookUrl: string;
+  /** Username override */
+  username?: string;
+  /** Only notify on failure */
+  onlyOnFailure?: boolean;
+}
+
+/**
+ * Generic webhook notification configuration
+ */
+export interface WebhookNotificationConfig {
+  /** Webhook URL */
+  url: string;
+  /** HTTP method (default: POST) */
+  method?: 'POST' | 'PUT';
+  /** Additional headers */
+  headers?: Record<string, string>;
+  /** Only notify on failure */
+  onlyOnFailure?: boolean;
+}
+
+/**
+ * Notification configuration
+ */
+export interface NotificationsConfig {
+  /** Slack notifications */
+  slack?: SlackNotificationConfig;
+  /** Discord notifications */
+  discord?: DiscordNotificationConfig;
+  /** Generic webhook */
+  webhook?: WebhookNotificationConfig;
+}
+
+/**
+ * Deployment result for notifications
+ */
+export interface DeploymentResult {
+  service: string;
+  environment?: string;
+  servers: string[];
+  success: boolean;
+  message?: string;
+  timestamp: string;
+  duration?: number;
+  commitHash?: string;
+  commitMessage?: string;
+}
+
+/**
  * Server configuration for deployment target
  */
 export interface ServerConfig {
@@ -90,6 +157,9 @@ export interface ServiceConfig {
 
   /** Deployment hooks (pre-deploy, post-deploy scripts) */
   hooks?: HooksConfig;
+
+  /** Notification settings */
+  notifications?: NotificationsConfig;
 
   /** Server-side configuration (single server) */
   server?: ServerConfig;

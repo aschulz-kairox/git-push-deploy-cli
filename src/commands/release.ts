@@ -1,10 +1,11 @@
 import chalk from 'chalk';
 import { execSync } from 'child_process';
 import { getServiceConfig, getWorkspaceRoot, getDeployRepoPath } from '../config/loader.js';
-import { getServers, getPrimaryServer, parseSshPort, buildSshUrl, type HooksConfig } from '../config/types.js';
-import { gitAddAll, gitCommit, gitPush, hasChanges, getCurrentBranch, getGitStatus } from '../utils/git.js';
+import { getServers, parseSshPort, buildSshUrl, type DeploymentResult } from '../config/types.js';
+import { gitAddAll, gitCommit, gitPush, hasChanges, getCurrentBranch, getGitStatus, getLastCommitHash, getLastCommitMessage } from '../utils/git.js';
 import { exists } from '../utils/files.js';
 import { joinPath } from '../utils/files.js';
+import { sendNotifications } from '../utils/notifications.js';
 
 interface ReleaseOptions {
   message?: string;
@@ -90,6 +91,7 @@ function ensureRemotes(deployRepoPath: string, serviceName: string): void {
 export async function releaseCommand(serviceName: string, options: ReleaseOptions = {}): Promise<void> {
   console.log(chalk.blue(`Releasing ${serviceName}...`));
   
+  const startTime = Date.now();
   const config = getServiceConfig(serviceName);
   const servers = getServers(config);
   const workspaceRoot = getWorkspaceRoot();
@@ -100,6 +102,14 @@ export async function releaseCommand(serviceName: string, options: ReleaseOption
   if (config.hooks?.preDeploy) {
     if (!executeHooks(config.hooks.preDeploy, 'pre-deploy', sourceDir)) {
       console.log(chalk.red('✗ Pre-deploy hooks failed, aborting release.'));
+      await sendNotifications(config.notifications, {
+        service: serviceName,
+        environment: config.environment,
+        servers: servers.map(s => s.name || s.host),
+        success: false,
+        message: 'Pre-deploy hooks failed',
+        timestamp: new Date().toISOString()
+      });
       return;
     }
   }
@@ -128,9 +138,16 @@ export async function releaseCommand(serviceName: string, options: ReleaseOption
   
   // Push to each server
   let pushSuccess = true;
+  const failedServers: string[] = [];
+  
   if (servers.length === 1) {
     console.log(chalk.gray(`  Pushing to origin/${branch}...`));
-    gitPush(deployRepoPath, 'origin', branch);
+    try {
+      gitPush(deployRepoPath, 'origin', branch);
+    } catch (error: any) {
+      pushSuccess = false;
+      failedServers.push(servers[0].name || servers[0].host);
+    }
   } else {
     console.log(chalk.gray(`  Pushing to ${servers.length} servers...`));
     for (let i = 0; i < servers.length; i++) {
@@ -143,6 +160,7 @@ export async function releaseCommand(serviceName: string, options: ReleaseOption
       } catch (error: any) {
         console.log(chalk.red(`    ✗ ${serverLabel}: ${error.message}`));
         pushSuccess = false;
+        failedServers.push(serverLabel);
       }
     }
   }
@@ -152,7 +170,33 @@ export async function releaseCommand(serviceName: string, options: ReleaseOption
     executeHooks(config.hooks.postDeployLocal, 'post-deploy-local', sourceDir);
   }
   
-  console.log(chalk.green(`✓ Released ${serviceName}`));
+  // Calculate duration
+  const duration = Math.round((Date.now() - startTime) / 1000);
+  
+  // Get commit info for notification
+  const commitHash = getLastCommitHash(deployRepoPath);
+  const commitMessage = getLastCommitMessage(deployRepoPath);
+  
+  // Send notifications
+  const result: DeploymentResult = {
+    service: serviceName,
+    environment: config.environment,
+    servers: servers.map(s => s.name || s.host),
+    success: pushSuccess,
+    message: pushSuccess ? undefined : `Failed on: ${failedServers.join(', ')}`,
+    timestamp: new Date().toISOString(),
+    duration,
+    commitHash,
+    commitMessage
+  };
+  
+  await sendNotifications(config.notifications, result);
+  
+  if (pushSuccess) {
+    console.log(chalk.green(`✓ Released ${serviceName}`));
+  } else {
+    console.log(chalk.yellow(`⚠ Released with errors: ${failedServers.join(', ')}`));
+  }
 }
 
 /**
