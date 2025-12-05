@@ -1,24 +1,167 @@
 # git-push-deploy-cli (gpd)
 
-Git Push Deploy - A CLI for git-based deployments with PM2 support. Push to deploy Node.js applications via SSH.
+> **Git Push Deploy** - Deploy Node.js applications with a single `git push`. Zero-downtime, multi-server, with Slack/Discord notifications.
 
-## Features
+[![npm version](https://badge.fury.io/js/git-push-deploy-cli.svg)](https://www.npmjs.com/package/git-push-deploy-cli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-- **Git-based deployment**: Push to bare repo, server hook handles install
-- **PM2 integration**: Automatic process restarts with user isolation
-- **Lazy initialization**: Deploy repo created on first `gpd stage`
-- **SSH orchestration**: Server setup from your dev machine
-- **Config-driven**: Define services in `.git-deploy.json`
+## 🎯 What is GPD?
 
-## Installation
+GPD is a deployment tool that uses Git's push mechanism to deploy your applications. Push your code, and the server automatically installs dependencies and restarts your app - with zero downtime.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           GPD DEPLOYMENT FLOW                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   Developer Machine                          Production Server              │
+│   ─────────────────                          ─────────────────              │
+│                                                                             │
+│   ┌─────────────┐      git push SSH         ┌─────────────────┐            │
+│   │  gpd deploy │ ─────────────────────────▶│   Bare Git Repo │            │
+│   └─────────────┘                           └────────┬────────┘            │
+│         │                                            │                      │
+│         │ 1. Build                                   │ 2. post-receive      │
+│         │ 2. Stage artifacts                         │    hook triggers     │
+│         │ 3. Commit                                  ▼                      │
+│         │ 4. Push                           ┌─────────────────┐            │
+│         │                                   │  gpd install    │            │
+│         │                                   │  ─────────────  │            │
+│         │                                   │  • git checkout │            │
+│         │                                   │  • npm install  │            │
+│         │                                   │  • pm2 reload   │            │
+│         │                                   └────────┬────────┘            │
+│         │                                            │                      │
+│         │                                            ▼                      │
+│   ┌─────────────┐                           ┌─────────────────┐            │
+│   │  Slack/     │◀──── Notification ────────│  App Running    │            │
+│   │  Discord    │                           │  (zero-downtime)│            │
+│   └─────────────┘                           └─────────────────┘            │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## 🏗️ Architecture Overview
+
+### Deployment Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         WORKSPACE STRUCTURE                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   Your Workspace (local)                                                    │
+│   ──────────────────────                                                    │
+│   workspace/                                                                │
+│   ├── .git-deploy.json          ◄── GPD configuration                      │
+│   │                                                                         │
+│   └── my-api/                       (your project)                          │
+│       ├── src/                      source code                             │
+│       ├── dist/                     build output                            │
+│       ├── package.json                                                      │
+│       │                                                                     │
+│       └── deploy/                   ◄── GPD creates this                    │
+│           ├── staging/              deploy repo for staging                 │
+│           │   ├── .git ────────────────────┐                               │
+│           │   ├── dist/                    │ points to                      │
+│           │   └── package.json             │ bare repo                      │
+│           │                                │                                │
+│           └── production/                  │                                │
+│               ├── .git ────────────────────┼───┐                           │
+│               ├── dist/                    │   │                            │
+│               └── package.json             │   │                            │
+│                                            │   │                            │
+├────────────────────────────────────────────┼───┼────────────────────────────┤
+│                                            │   │                            │
+│   Server (remote via SSH)                  │   │                            │
+│   ───────────────────────                  │   │                            │
+│                                            ▼   ▼                            │
+│   /git/deploy/                        Bare Git Repositories                 │
+│   ├── staging/my-api/                 (receive pushes)                      │
+│   │   └── hooks/post-receive          triggers gpd install                  │
+│   │                                                                         │
+│   └── production/my-api/                                                    │
+│       └── hooks/post-receive                                                │
+│                                                                             │
+│   /opt/apps/                          Application Directories               │
+│   ├── staging/my-api/                 (where code runs)                     │
+│   │   ├── dist/                                                             │
+│   │   ├── package.json                                                      │
+│   │   ├── node_modules/                                                     │
+│   │   └── .env                        ◄── generated from config             │
+│   │                                                                         │
+│   └── production/my-api/                                                    │
+│       ├── dist/                                                             │
+│       └── ...                                                               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Runtime Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         RUNTIME / HOSTING                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   Server                                                                    │
+│   ──────                                                                    │
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │                     Process Manager (PM2 or GPDD)                    │  │
+│   ├─────────────────────────────────────────────────────────────────────┤  │
+│   │                                                                     │  │
+│   │   PM2 Mode                          GPDD Mode (Zero-Downtime)       │  │
+│   │   ────────                          ─────────────────────────       │  │
+│   │                                                                     │  │
+│   │   ┌─────────┐                       ┌─────────────────────┐        │  │
+│   │   │   PM2   │                       │    GPDD Master      │        │  │
+│   │   │ Daemon  │                       │  (cluster manager)  │        │  │
+│   │   └────┬────┘                       └──────────┬──────────┘        │  │
+│   │        │                                       │                    │  │
+│   │        │ manages                               │ manages            │  │
+│   │        ▼                                       ▼                    │  │
+│   │   ┌─────────┐                       ┌─────────────────────┐        │  │
+│   │   │  App    │                       │  Worker 1  Worker 2 │        │  │
+│   │   │ Process │                       │  Worker 3  Worker 4 │        │  │
+│   │   └─────────┘                       └─────────────────────┘        │  │
+│   │                                                                     │  │
+│   │   restart on crash                  • Rolling restart               │  │
+│   │   cluster mode                      • Zero-downtime reload          │  │
+│   │   log management                    • Built-in clustering           │  │
+│   │                                                                     │  │
+│   └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│   ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐       │
+│   │  Port 3000      │    │  Port 3001      │    │  Port 3002      │       │
+│   │  my-api-staging │    │  my-api-prod    │    │  other-service  │       │
+│   └────────┬────────┘    └────────┬────────┘    └────────┬────────┘       │
+│            │                      │                      │                 │
+│            └──────────────────────┼──────────────────────┘                 │
+│                                   │                                        │
+│                                   ▼                                        │
+│                          ┌─────────────────┐                               │
+│                          │  Reverse Proxy  │                               │
+│                          │  (nginx/caddy)  │                               │
+│                          └────────┬────────┘                               │
+│                                   │                                        │
+│                                   ▼                                        │
+│                              Internet                                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## ⚡ Quick Start
+
+### Installation
 
 ```bash
 npm install -g git-push-deploy-cli
 ```
 
-## Quick Start
+### 1. Configure your service
 
-### 1. Create `.git-deploy.json` in your workspace root:
+Create `.git-deploy.json` in your workspace root:
 
 ```json
 {
@@ -26,38 +169,25 @@ npm install -g git-push-deploy-cli
     "my-api-staging": {
       "sourceDir": "my-api",
       "deployRepo": "deploy/staging",
-      "artifacts": ["dist/index.js", "package.json", "ecosystem.config.cjs"],
+      "artifacts": ["dist", "package.json"],
       "processManager": "pm2",
       "processName": "my-api-staging",
-      "pm2Home": "/opt/myapp/.pm2",
-      "pm2User": "myapp",
       "environment": "staging",
-      "env": {
-        "PORT": 5000,
-        "NODE_ENV": "staging"
-      },
       "server": {
-        "host": "user@myserver",
-        "sshOptions": "-p 22",
-        "targetDir": "/opt/myapp/staging/my-api",
-        "bareRepo": "/git/deploy-myapp/staging/my-api",
-        "group": "deploy-myapp"
+        "host": "deploy@myserver.com",
+        "targetDir": "/opt/apps/staging/my-api",
+        "bareRepo": "/git/deploy/staging/my-api"
       }
     }
   }
 }
 ```
 
-### 2. Initialize server (once per service)
+### 2. Initialize server (once)
 
 ```bash
 gpd init my-api-staging
 ```
-
-This creates via SSH:
-- Bare git repository at `/git/deploy-myapp/staging/my-api`
-- Target directory at `/opt/myapp/staging/my-api`
-- Post-receive hook that calls `gpd install`
 
 ### 3. Deploy
 
@@ -65,102 +195,274 @@ This creates via SSH:
 gpd deploy my-api-staging
 ```
 
-This:
-1. Creates deploy repo (if needed) at `my-api/deploy/staging/`
-2. Copies build artifacts to deploy repo
-3. Commits and pushes to bare repo on server
-4. Server hook: `git checkout && npm install && pm2 restart`
+That's it! Your app is now running on the server.
 
-## Commands
+## 📖 Commands
 
-| Command | Description |
-|---------|-------------|
-| `gpd status` | Show all configured services |
-| `gpd stage <service>` | Copy build artifacts to deploy repo |
-| `gpd release <service>` | Commit and push deploy repo |
-| `gpd deploy <service>` | Stage + release (hook handles install) |
-| `gpd init <service>` | Initialize server (bare repo, target dir, hook) |
-| `gpd install <service>` | Server-side install (called by hook) |
-| `gpd logs <service>` | Show PM2 logs from server via SSH |
-
-## Options
-
-```bash
-gpd deploy my-api -m "custom commit message"
-gpd deploy my-api --skip-push      # Only stage, do not push
-gpd logs my-api -f                 # Follow logs
-gpd logs my-api -n 100             # Show last 100 lines
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                              GPD COMMANDS                                   │
+├────────────────┬───────────────────────────────────────────────────────────┤
+│ Command        │ Description                                               │
+├────────────────┼───────────────────────────────────────────────────────────┤
+│ gpd status     │ Show all configured services                              │
+│ gpd config     │ Interactive configuration wizard                          │
+│ gpd init       │ Initialize server (bare repo, target dir, hooks)          │
+│ gpd deploy     │ Full deployment (stage + release)                         │
+│ gpd stage      │ Copy build artifacts to deploy repo                       │
+│ gpd release    │ Commit and push to server                                 │
+│ gpd rollback   │ Rollback to previous version                              │
+│ gpd logs       │ Show application logs from server                         │
+│ gpd daemon     │ Manage GPDD process (start/stop/status/logs)              │
+├────────────────┼───────────────────────────────────────────────────────────┤
+│ Options        │                                                           │
+├────────────────┼───────────────────────────────────────────────────────────┤
+│ -m, --message  │ Custom commit message                                     │
+│ -n, --lines    │ Number of log lines (default: 50)                         │
+│ -f, --follow   │ Follow logs in real-time                                  │
+│ --dry-run      │ Preview changes without executing                         │
+└────────────────┴───────────────────────────────────────────────────────────┘
 ```
 
-## Config Reference
+## 🔧 Features
+
+### Multi-Server Deployment
+
+Deploy to multiple servers simultaneously:
+
+```json
+{
+  "services": {
+    "my-api-prod": {
+      "servers": [
+        { "name": "primary", "host": "prod1.example.com", "targetDir": "/opt/app" },
+        { "name": "replica", "host": "prod2.example.com", "targetDir": "/opt/app" }
+      ]
+    }
+  }
+}
+```
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      MULTI-SERVER DEPLOYMENT                              │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│                        gpd deploy my-api-prod                            │
+│                               │                                          │
+│                               │                                          │
+│              ┌────────────────┼────────────────┐                        │
+│              │                │                │                        │
+│              ▼                ▼                ▼                        │
+│       ┌──────────┐     ┌──────────┐     ┌──────────┐                   │
+│       │ Server 1 │     │ Server 2 │     │ Server 3 │                   │
+│       │ (primary)│     │ (replica)│     │ (replica)│                   │
+│       └──────────┘     └──────────┘     └──────────┘                   │
+│              │                │                │                        │
+│              └────────────────┼────────────────┘                        │
+│                               │                                          │
+│                               ▼                                          │
+│                      ┌────────────────┐                                 │
+│                      │ Load Balancer  │                                 │
+│                      └────────────────┘                                 │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Deployment Hooks
+
+Run custom scripts before/after deployment:
+
+```json
+{
+  "hooks": {
+    "preDeploy": ["npm run lint", "npm test"],
+    "postDeploy": ["npx prisma migrate deploy"],
+    "postDeployLocal": ["echo 'Deployed!'"]
+  }
+}
+```
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         DEPLOYMENT HOOKS                                  │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   LOCAL (Developer Machine)              SERVER                          │
+│   ─────────────────────────              ──────                          │
+│                                                                          │
+│   ┌─────────────────────┐                                               │
+│   │ 1. preDeploy hooks  │  ◄── npm run lint, npm test                   │
+│   │    (local)          │                                                │
+│   └──────────┬──────────┘                                               │
+│              │                                                           │
+│              ▼                                                           │
+│   ┌─────────────────────┐                ┌─────────────────────┐        │
+│   │ 2. git push         │ ──────────────▶│ 3. post-receive     │        │
+│   └─────────────────────┘                │    hook             │        │
+│                                          └──────────┬──────────┘        │
+│                                                     │                    │
+│                                                     ▼                    │
+│                                          ┌─────────────────────┐        │
+│                                          │ 4. gpd install      │        │
+│                                          │    • git checkout   │        │
+│                                          │    • npm install    │        │
+│                                          └──────────┬──────────┘        │
+│                                                     │                    │
+│                                                     ▼                    │
+│                                          ┌─────────────────────┐        │
+│                                          │ 5. postDeploy hooks │        │
+│                                          │    (server)         │        │
+│                                          │    e.g. prisma      │        │
+│                                          └──────────┬──────────┘        │
+│                                                     │                    │
+│                                                     ▼                    │
+│                                          ┌─────────────────────┐        │
+│                                          │ 6. Process restart  │        │
+│   ┌─────────────────────┐                │    (PM2/GPDD)       │        │
+│   │ 7. postDeployLocal  │◀───────────────└─────────────────────┘        │
+│   │    hooks            │   notification                                 │
+│   └─────────────────────┘                                               │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Notifications (Slack, Discord, Webhook)
+
+Get notified on every deployment:
+
+```json
+{
+  "notifications": {
+    "slack": {
+      "webhookUrl": "https://hooks.slack.com/services/xxx",
+      "channel": "#deployments"
+    },
+    "discord": {
+      "webhookUrl": "https://discord.com/api/webhooks/xxx"
+    },
+    "webhook": {
+      "url": "https://your-api.com/deploy-hook",
+      "headers": { "Authorization": "Bearer xxx" }
+    }
+  }
+}
+```
+
+### Process Managers
+
+GPD supports multiple process managers:
+
+| Manager | Description | Use Case |
+|---------|-------------|----------|
+| `pm2` | Industry standard, feature-rich | Production, logging, monitoring |
+| `gpdd` | Built-in, zero-downtime | Simple apps, zero-config |
+| `systemd` | Linux system service | Server integration |
+
+### Zero-Downtime with GPDD
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    GPDD ZERO-DOWNTIME RELOAD                              │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   Before Reload                After gpdd reload                         │
+│   ─────────────                ─────────────────                         │
+│                                                                          │
+│   ┌──────────────┐             ┌──────────────┐                         │
+│   │    Master    │             │    Master    │                         │
+│   └──────┬───────┘             └──────┬───────┘                         │
+│          │                            │                                  │
+│    ┌─────┴─────┐               ┌──────┴──────┐                          │
+│    │           │               │             │                          │
+│    ▼           ▼               ▼             ▼                          │
+│ ┌──────┐   ┌──────┐         ┌──────┐     ┌──────┐                      │
+│ │ W1   │   │ W2   │         │ W1   │     │ W2   │                      │
+│ │ OLD  │   │ OLD  │         │ NEW  │     │ NEW  │                      │
+│ └──────┘   └──────┘         └──────┘     └──────┘                      │
+│                                                                          │
+│                              Rolling restart:                            │
+│                              1. Start new W1                             │
+│                              2. Stop old W1 (after ready)                │
+│                              3. Start new W2                             │
+│                              4. Stop old W2                              │
+│                                                                          │
+│                              ✓ No dropped connections                    │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+## 📋 Full Configuration Reference
 
 ```typescript
 interface ServiceConfig {
-  sourceDir: string;         // Project directory (e.g., "my-api")
-  deployRepo: string;        // Deploy repo path, relative to sourceDir
-  artifacts: string[];       // Files/dirs to copy
-  processManager: 'pm2';     // Process manager type
-  processName: string;       // PM2 process name
-  pm2Home?: string;          // PM2_HOME on server
-  pm2User?: string;          // User to run PM2 as (sudo -u)
-  environment?: string;      // staging | production
-  env?: Record<string, any>; // Environment variables for .env file
-  server: {
-    host: string;            // SSH host (user@hostname)
-    sshOptions?: string;     // SSH options (e.g., "-p 6771 -4")
-    targetDir: string;       // Target directory on server
-    bareRepo: string;        // Bare repo path on server
-    group?: string;          // Unix group for permissions
+  // Source & Deploy
+  sourceDir: string;              // Project directory (e.g., "my-api")
+  deployRepo: string;             // Deploy repo path (e.g., "deploy/staging")
+  artifacts: string[];            // Files to deploy (e.g., ["dist", "package.json"])
+  
+  // Process Manager
+  processManager?: 'pm2' | 'gpdd' | 'systemd';
+  processName: string;            // Process name
+  pm2Home?: string;               // PM2_HOME directory
+  pm2User?: string;               // User for PM2 (sudo -u)
+  gpddWorkers?: number;           // GPDD worker count (0 = auto)
+  gpddEntryPoint?: string;        // Entry point (default: dist/index.js)
+  
+  // Environment
+  environment?: 'production' | 'staging' | 'development';
+  env?: Record<string, string | number | boolean>;
+  
+  // Server (single)
+  server?: {
+    host: string;                 // SSH host (user@hostname)
+    sshOptions?: string;          // SSH options (e.g., "-p 22")
+    targetDir: string;            // Where code runs
+    bareRepo: string;             // Git bare repo path
+    group?: string;               // Unix group
+    name?: string;                // Display name
+  };
+  
+  // Servers (multi)
+  servers?: ServerConfig[];       // Multiple servers
+  
+  // Hooks
+  hooks?: {
+    preDeploy?: string[];         // Run locally before push
+    postDeploy?: string[];        // Run on server after install
+    postDeployLocal?: string[];   // Run locally after success
+  };
+  
+  // Notifications
+  notifications?: {
+    slack?: { webhookUrl: string; channel?: string; };
+    discord?: { webhookUrl: string; };
+    webhook?: { url: string; headers?: Record<string, string>; };
   };
 }
 ```
 
-## Architecture
+## 🛠️ Server Prerequisites
 
-```
-Workspace                              Server
-─────────                              ──────
-my-api/
-├── src/                               /git/deploy-myapp/staging/my-api/
-├── dist/                                └── hooks/post-receive
-└── deploy/                                   ↓
-    └── staging/                       /opt/myapp/staging/my-api/
-        ├── .git → ssh://...           ├── dist/index.js
-        ├── dist/                      ├── package.json
-        └── package.json               ├── node_modules/
-                                       └── .env (generated)
-```
+- **Node.js** (18+ recommended)
+- **Git**
+- **SSH access** from dev machine
+- **PM2** or **GPDD** (installed globally)
+- **GPD CLI** (installed globally on server)
 
-## Workflow
-
-```
-Dev Machine                           Server
-───────────                           ──────
-gpd deploy my-api-staging
-  │
-  ├─ gpd stage
-  │    └─ Copy artifacts → my-api/deploy/staging/
-  │
-  └─ gpd release  
-       └─ git push ───────────────→ /git/deploy-myapp/staging/my-api
-                                          │
-                                          └─ post-receive hook:
-                                               gpd install my-api-staging
-                                                 │
-                                                 ├─ git checkout -f
-                                                 ├─ .env generation
-                                                 ├─ npm install --omit=dev
-                                                 └─ pm2 restart
+```bash
+# On server
+npm install -g pm2 git-push-deploy-cli
+# Or for GPDD
+npm install -g git-push-deploy-daemon git-push-deploy-cli
 ```
 
-## Server Prerequisites
+## 📚 More Documentation
 
-- Node.js + npm
-- PM2 (`npm install -g pm2`)
-- gpd CLI (`npm install -g git-push-deploy-cli`)
-- SSH access from dev machine
-- Git
+- [Git-Based Deployment Guide](../docs/git-based-deployment.md)
+- [PM2 Process Management](../docs/pm2-process-management.md)
+- [GPDD Daemon Documentation](../git-push-deploy-daemon/README.md)
 
-## License
+## 📄 License
 
 MIT
