@@ -1,6 +1,7 @@
 ﻿import chalk from 'chalk';
 import { stageCommand, stageCommandDryRun } from './stage.js';
 import { releaseCommand, releaseCommandDryRun } from './release.js';
+import { ensureInitialized } from './init.js';
 import { getServiceConfig } from '../config/loader.js';
 import { getServers } from '../config/types.js';
 
@@ -44,6 +45,9 @@ export async function deployCommand(serviceName: string, options: DeployOptions 
     console.log(chalk.gray('Run without --dry-run to actually deploy.'));
     return;
   }
+
+  // 0. Ensure server is initialized (idempotent - safe to run every time)
+  await ensureInitialized(serviceName);
 
   // 1. Stage artifacts to deploy repo
   await stageCommand(serviceName);

@@ -69,53 +69,49 @@ function execAsUser(cmd: string, user: string, options: { cwd?: string; env?: Re
  * - PM2_HOME: PM2 home directory (optional)
  * 
  * Steps:
- * 1. git checkout from bare repo to target dir
- * 2. Generate .env file from config
- * 3. npm install --omit=dev
- * 4. PM2 restart
+ * 1. git checkout from bare repo to target dir (config file comes with this!)
+ * 2. Load config from target dir
+ * 3. Generate .env file from config
+ * 4. npm install --omit=dev
+ * 5. PM2 restart
  */
 export async function installCommand(serviceName: string, options: InstallOptions = {}): Promise<void> {
   console.log(chalk.blue(`Installing ${serviceName}...`));
 
-  // Get paths from environment (set by hook) or use config
+  // Get paths from environment (set by hook)
   const targetDir = process.env.GPD_TARGET_DIR;
   const gitDir = process.env.GPD_GIT_DIR;
+  const pm2User = process.env.GPD_PM2_USER; // Optional, for pre-checkout user context
   
   if (!targetDir || !gitDir) {
     throw new Error('GPD_TARGET_DIR and GPD_GIT_DIR must be set. This command should be run by the post-receive hook.');
   }
 
-  // Find config - on server it should be at /etc/gpd/<service>.json or passed via -c
-  const configPath = options.configPath || findConfigFile();
-  if (!configPath) {
-    throw new Error('.git-deploy.json not found. Specify with -c option.');
+  console.log(chalk.gray(`  Target: ${targetDir}`));
+  console.log(chalk.gray(`  Git dir: ${gitDir}`));
+
+  // 1. Git checkout FIRST - this brings .git-deploy.json to target dir
+  console.log(chalk.blue('Checking out files...'));
+  const checkoutCmd = `git --work-tree="${targetDir}" --git-dir="${gitDir}" checkout -f`;
+  exec(checkoutCmd);
+
+  // 2. NOW load config from target dir (file exists after checkout)
+  const configPath = options.configPath || join(targetDir, '.git-deploy.json');
+  if (!existsSync(configPath)) {
+    throw new Error(`.git-deploy.json not found at ${configPath}. Make sure it's included in artifacts.`);
   }
 
   const config = getServiceConfig(serviceName, configPath);
-  const { processName, pm2Home, pm2User, env } = config;
+  const { processName, pm2Home, pm2User: configPm2User, env } = config;
+  const effectivePm2User = configPm2User || pm2User;
 
-  console.log(chalk.gray(`  Target: ${targetDir}`));
-  console.log(chalk.gray(`  Git dir: ${gitDir}`));
-  if (pm2User) console.log(chalk.gray(`  PM2 user: ${pm2User}`));
+  if (effectivePm2User) console.log(chalk.gray(`  PM2 user: ${effectivePm2User}`));
 
-  // Determine which user to run commands as
-  const runUser = pm2User || process.env.USER || 'root';
-  const userHome = pm2User ? `/home/${pm2User}` : process.env.HOME || '/root';
-  
   // Environment for npm/pm2 commands
   const cmdEnv: Record<string, string> = {};
   if (pm2Home) cmdEnv.PM2_HOME = pm2Home;
-  if (pm2User) {
+  if (effectivePm2User) {
     cmdEnv.HOME = `/opt/kairox`; // Use app directory as home for npm cache
-  }
-
-  // 1. Git checkout from bare repo to target dir
-  console.log(chalk.blue('Checking out files...'));
-  const checkoutCmd = `git --work-tree="${targetDir}" --git-dir="${gitDir}" checkout -f`;
-  if (pm2User) {
-    execAsUser(checkoutCmd, pm2User);
-  } else {
-    exec(checkoutCmd);
   }
 
   // 2. Generate .env file from config
@@ -127,8 +123,8 @@ export async function installCommand(serviceName: string, options: InstallOption
     console.log(chalk.gray(`  Written to ${envPath}`));
     
     // Fix ownership if running as different user
-    if (pm2User) {
-      exec(`sudo chown ${pm2User}:${pm2User} "${envPath}"`, { silent: true });
+    if (effectivePm2User) {
+      exec(`sudo chown ${effectivePm2User}:${effectivePm2User} "${envPath}"`, { silent: true });
     }
   }
 
@@ -136,8 +132,8 @@ export async function installCommand(serviceName: string, options: InstallOption
   const logsDir = join(targetDir, 'logs');
   if (!existsSync(logsDir)) {
     mkdirSync(logsDir, { recursive: true });
-    if (pm2User) {
-      exec(`sudo chown ${pm2User}:${pm2User} "${logsDir}"`, { silent: true });
+    if (effectivePm2User) {
+      exec(`sudo chown ${effectivePm2User}:${effectivePm2User} "${logsDir}"`, { silent: true });
     }
     console.log(chalk.gray(`  Created ${logsDir}`));
   }
@@ -145,8 +141,8 @@ export async function installCommand(serviceName: string, options: InstallOption
   // 4. npm install
   console.log(chalk.blue('Installing dependencies...'));
   const npmCmd = `npm install --omit=dev --cache=/opt/kairox/.npm`;
-  if (pm2User) {
-    execAsUser(npmCmd, pm2User, { cwd: targetDir, env: cmdEnv });
+  if (effectivePm2User) {
+    execAsUser(npmCmd, effectivePm2User, { cwd: targetDir, env: cmdEnv });
   } else {
     exec(npmCmd, { cwd: targetDir });
   }
@@ -157,8 +153,8 @@ export async function installCommand(serviceName: string, options: InstallOption
     for (const hookCmd of config.hooks.postDeploy) {
       console.log(chalk.gray(`  $ ${hookCmd}`));
       try {
-        if (pm2User) {
-          execAsUser(hookCmd, pm2User, { cwd: targetDir, env: cmdEnv });
+        if (effectivePm2User) {
+          execAsUser(hookCmd, effectivePm2User, { cwd: targetDir, env: cmdEnv });
         } else {
           exec(hookCmd, { cwd: targetDir });
         }
@@ -171,6 +167,7 @@ export async function installCommand(serviceName: string, options: InstallOption
 
   // 6. Restart process manager
   const processManager = config.processManager || 'pm2';
+  const runUser = effectivePm2User || process.env.USER || 'root';
   
   if (processManager === 'gpdd') {
     await restartWithGpdd(config, targetDir, runUser, cmdEnv);

@@ -150,3 +150,25 @@ export async function runSshCommand(host: string, command: string, sshOptions?: 
     throw new Error(`SSH command failed: ${error.message}`);
   }
 }
+
+/**
+ * Copy a local file to a remote host via SCP
+ */
+export function scpFile(localPath: string, host: string, remotePath: string, sshOptions?: string): void {
+  // Extract port from sshOptions if present (e.g., "-p 6771")
+  let scpOpts = '';
+  if (sshOptions) {
+    const portMatch = sshOptions.match(/-p\s*(\d+)/);
+    if (portMatch) {
+      scpOpts = `-P ${portMatch[1]} `;
+    }
+    // Also add other options like -4 for IPv4
+    const ipv4Match = sshOptions.match(/-4/);
+    if (ipv4Match) {
+      scpOpts += '-4 ';
+    }
+  }
+  
+  const scpCommand = `scp ${scpOpts}"${localPath}" ${host}:"${remotePath}"`;
+  execSync(scpCommand, { stdio: 'inherit' });
+}

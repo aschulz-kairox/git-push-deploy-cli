@@ -1,11 +1,12 @@
 import chalk from 'chalk';
-import { getServiceConfig } from '../config/loader.js';
+import { getServiceConfig, findConfigFile } from '../config/loader.js';
 import { getServers, type ServerConfig } from '../config/types.js';
 import { sshExec, checkSshConnection, findSshPublicKey, copySshKey } from '../utils/shell.js';
 import * as readline from 'readline';
 
 interface InitOptions {
   skipSshCheck?: boolean;
+  quiet?: boolean;  // For auto-init during deploy
 }
 
 /**
@@ -146,6 +147,37 @@ done
 
 log "=== Deployment completed ==="
 `;
+}
+
+/**
+ * Check if a server is already initialized (bare repo exists)
+ */
+function checkServerInitialized(host: string, bareRepo: string, sshOptions?: string): boolean {
+  try {
+    // Check if bare repo exists and is a git repo
+    sshExec(host, `test -d "${bareRepo}/objects"`, { sshOptions, silent: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ensure all servers for a service are initialized
+ * Called automatically by deploy command - idempotent operation
+ */
+export async function ensureInitialized(serviceName: string): Promise<void> {
+  const config = getServiceConfig(serviceName);
+  const servers = getServers(config);
+  
+  for (const server of servers) {
+    const isInitialized = checkServerInitialized(server.host, server.bareRepo, server.sshOptions);
+    
+    if (!isInitialized) {
+      console.log(chalk.yellow(`  Server ${server.host} not initialized, running init...`));
+      await initServer(serviceName, server, config, { skipSshCheck: false, quiet: false });
+    }
+  }
 }
 
 /**
