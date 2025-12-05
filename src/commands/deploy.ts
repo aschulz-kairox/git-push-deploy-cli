@@ -22,7 +22,7 @@ export async function deployCommand(serviceName: string, options: DeployOptions 
   // 3. Trigger remote install via SSH
   if (!options.skipRemote) {
     const config = getServiceConfig(serviceName);
-    const { host, targetDir } = config.server;
+    const { host, targetDir, sshOptions } = config.server;
     const { mainPackage, processName, pm2Home } = config;
     
     console.log(chalk.blue(`Installing on ${host}...`));
@@ -36,7 +36,7 @@ export async function deployCommand(serviceName: string, options: DeployOptions 
       `${pm2Env}pm2 restart ecosystem.config.cjs`
     ].join(' && ');
     
-    sshExec(host, remoteCmd);
+    sshExec(host, remoteCmd, { sshOptions });
     
     console.log(chalk.green(`✓ Deployed ${serviceName} to ${host}`));
   }

@@ -12,7 +12,7 @@ interface LogsOptions {
  */
 export async function logsCommand(serviceName: string, options: LogsOptions = {}): Promise<void> {
   const config = getServiceConfig(serviceName);
-  const { host } = config.server;
+  const { host, sshOptions } = config.server;
   const { processName, pm2Home } = config;
   const lines = options.lines || '50';
   
@@ -21,9 +21,12 @@ export async function logsCommand(serviceName: string, options: LogsOptions = {}
   console.log(chalk.blue(`Logs for ${serviceName} from ${host}...`));
   console.log('');
   
+  // Build SSH args with options
+  const sshBaseArgs = sshOptions ? sshOptions.split(' ') : [];
+  
   if (options.follow) {
     // Use spawn for follow mode with SSH
-    const sshArgs = [host, `${pm2Env} pm2 logs ${processName} --lines ${lines}`];
+    const sshArgs = [...sshBaseArgs, host, `${pm2Env} pm2 logs ${processName} --lines ${lines}`];
     const ssh = spawn('ssh', sshArgs, {
       stdio: 'inherit'
     });
@@ -33,7 +36,7 @@ export async function logsCommand(serviceName: string, options: LogsOptions = {}
     });
   } else {
     // Non-follow mode: get last N lines
-    const sshArgs = [host, `${pm2Env} pm2 logs ${processName} --lines ${lines} --nostream`];
+    const sshArgs = [...sshBaseArgs, host, `${pm2Env} pm2 logs ${processName} --lines ${lines} --nostream`];
     const ssh = spawn('ssh', sshArgs, {
       stdio: 'inherit'
     });

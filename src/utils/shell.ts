@@ -55,9 +55,10 @@ export function getCurrentUser(): string {
 /**
  * Execute a command on a remote host via SSH
  */
-export function sshExec(host: string, command: string, options: { silent?: boolean } = {}): string {
-  // Escape single quotes in command for SSH
-  const escapedCmd = command.replace(/'/g, "'\\''");
-  const sshCommand = `ssh ${host} '${escapedCmd}'`;
+export function sshExec(host: string, command: string, options: { silent?: boolean; sshOptions?: string } = {}): string {
+  // For Windows, use double quotes and escape internal quotes
+  const escapedCmd = command.replace(/"/g, '\\"');
+  const sshOpts = options.sshOptions ? `${options.sshOptions} ` : '';
+  const sshCommand = `ssh ${sshOpts}${host} "${escapedCmd}"`;
   return exec(sshCommand, { silent: options.silent });
 }

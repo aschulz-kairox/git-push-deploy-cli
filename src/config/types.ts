@@ -33,11 +33,20 @@ export interface ServiceConfig {
     /** SSH host (user@hostname) */
     host: string;
     
+    /** Additional SSH options (e.g., "-p 6771 -4") */
+    sshOptions?: string;
+    
     /** Where to install on server (clone of bare repo) */
     targetDir: string;
     
     /** Path to bare git repo on server */
     bareRepo: string;
+    
+    /** Unix user for ownership (optional) */
+    user?: string;
+    
+    /** Unix group for shared access (created if not exists) */
+    group?: string;
   };
 }
 
