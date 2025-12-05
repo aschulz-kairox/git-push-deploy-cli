@@ -177,14 +177,20 @@ async function restartWithPm2(
 ): Promise<void> {
   const { processName, pm2Home, pm2User } = config;
   
+  // If GPD_PM2_USER is set, we're already running as that user (via sudo in hook)
+  // No need to use execAsUser again
+  const alreadyCorrectUser = process.env.GPD_PM2_USER === pm2User;
+  
   console.log(chalk.blue('Restarting PM2 process...'));
   
   // Check if process exists and restart, otherwise start
   const pm2RestartCmd = `pm2 describe ${processName} > /dev/null 2>&1 && pm2 restart ${processName} --update-env || pm2 start ecosystem.config.cjs --env ${config.environment || 'production'}`;
   
-  if (pm2User) {
+  if (pm2User && !alreadyCorrectUser) {
+    // Need to switch user
     execAsUser(pm2RestartCmd, pm2User, { cwd: targetDir, env: cmdEnv });
   } else {
+    // Already correct user or no specific user needed
     let fullPm2Cmd = pm2RestartCmd;
     if (pm2Home) fullPm2Cmd = `PM2_HOME=${pm2Home} ${fullPm2Cmd}`;
     exec(fullPm2Cmd, { cwd: targetDir });
@@ -193,7 +199,7 @@ async function restartWithPm2(
   // PM2 save
   console.log(chalk.blue('Saving PM2 state...'));
   const pm2SaveCmd = 'pm2 save';
-  if (pm2User) {
+  if (pm2User && !alreadyCorrectUser) {
     execAsUser(pm2SaveCmd, pm2User, { env: cmdEnv });
   } else {
     let fullSaveCmd = pm2SaveCmd;
@@ -203,7 +209,7 @@ async function restartWithPm2(
   
   // Show status
   const pm2StatusCmd = 'pm2 status';
-  if (pm2User) {
+  if (pm2User && !alreadyCorrectUser) {
     execAsUser(pm2StatusCmd, pm2User, { env: cmdEnv });
   } else {
     let fullStatusCmd = pm2StatusCmd;
@@ -225,6 +231,9 @@ async function restartWithGpdd(
   const workers = config.gpddWorkers || 0; // 0 = CPU count
   const pm2User = config.pm2User; // Reuse pm2User for gpdd as well
   
+  // If GPD_PM2_USER is set, we're already running as that user
+  const alreadyCorrectUser = process.env.GPD_PM2_USER === pm2User;
+  
   console.log(chalk.blue('Managing GPDD process...'));
   
   // Check if gpdd is installed
@@ -242,7 +251,7 @@ async function restartWithGpdd(
     // Running - send reload signal for zero-downtime restart
     console.log(chalk.blue('Sending reload signal...'));
     const reloadCmd = `cd "${targetDir}" && gpdd reload`;
-    if (pm2User) {
+    if (pm2User && !alreadyCorrectUser) {
       execAsUser(reloadCmd, pm2User, { env: cmdEnv });
     } else {
       exec(reloadCmd);
@@ -252,7 +261,7 @@ async function restartWithGpdd(
     console.log(chalk.blue(`Starting ${entryPoint} with ${workers || 'auto'} workers...`));
     const workerArg = workers > 0 ? `-w ${workers}` : '';
     const startCmd = `cd "${targetDir}" && gpdd start ${entryPoint} ${workerArg}`;
-    if (pm2User) {
+    if (pm2User && !alreadyCorrectUser) {
       // Start in background with nohup
       execAsUser(`nohup ${startCmd} > logs/gpdd.log 2>&1 &`, pm2User, { env: cmdEnv });
     } else {
@@ -267,7 +276,7 @@ async function restartWithGpdd(
   console.log(chalk.blue('GPDD status:'));
   const statusCmd = `cd "${targetDir}" && gpdd status`;
   try {
-    if (pm2User) {
+    if (pm2User && !alreadyCorrectUser) {
       execAsUser(statusCmd, pm2User, { env: cmdEnv });
     } else {
       exec(statusCmd);
