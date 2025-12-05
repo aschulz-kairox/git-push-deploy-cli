@@ -136,12 +136,12 @@ export async function installCommand(serviceName: string, options: InstallOption
   // 4. npm install
   // Note: When invoked via hook, we're already running as the correct user
   // Use explicit cache path to avoid permission issues
-  // Use --ignore-scripts to skip postinstall hooks that may not work on server
+  // Scripts should check NODE_ENV and skip themselves in production
   console.log(chalk.blue('Installing dependencies...'));
   const npmCachePath = pm2Home ? `${pm2Home.replace('/.pm2', '')}/.npm` : undefined;
   const npmCmd = npmCachePath 
-    ? `npm install --omit=dev --ignore-scripts --cache="${npmCachePath}"`
-    : `npm install --omit=dev --ignore-scripts`;
+    ? `npm install --omit=dev --cache="${npmCachePath}"`
+    : `npm install --omit=dev`;
   exec(npmCmd, { cwd: targetDir });
 
   // 5. Run post-deploy hooks (server-side, after npm install)
