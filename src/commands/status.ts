@@ -19,8 +19,12 @@ export async function statusCommand(): Promise<void> {
       console.log(chalk.gray(`  ${name}`));
       console.log(chalk.gray(`    Host: ${svc.server.host}`));
       console.log(chalk.gray(`    Process: ${svc.processName}`));
-      console.log(chalk.gray(`    Packages: ${svc.packages.join(', ')}`));
+      console.log(chalk.gray(`    Source: ${svc.sourceDir}`));
+      console.log(chalk.gray(`    Deploy: ${svc.sourceDir}/${svc.deployRepo}`));
       console.log(chalk.gray(`    Target: ${svc.server.targetDir}`));
+      if (svc.environment) {
+        console.log(chalk.gray(`    Environment: ${svc.environment}`));
+      }
     }
     console.log('');
   } catch {

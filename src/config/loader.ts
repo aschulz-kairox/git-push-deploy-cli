@@ -69,6 +69,26 @@ export function getWorkspaceRoot(): string {
 }
 
 /**
+ * Get absolute path to source directory
+ * @param config Service configuration
+ * @param workspaceRoot Workspace root path
+ * @returns Absolute path to sourceDir (e.g., /workspace/kairox-api-node)
+ */
+export function getSourceDir(config: ServiceConfig, workspaceRoot: string): string {
+  return join(workspaceRoot, config.sourceDir);
+}
+
+/**
+ * Get absolute path to deploy repository
+ * @param config Service configuration  
+ * @param workspaceRoot Workspace root path
+ * @returns Absolute path to deployRepo (e.g., /workspace/kairox-api-node/deploy/staging)
+ */
+export function getDeployRepoPath(config: ServiceConfig, workspaceRoot: string): string {
+  return join(workspaceRoot, config.sourceDir, config.deployRepo);
+}
+
+/**
  * List all configured services
  */
 export function listServices(configPath?: string): string[] {

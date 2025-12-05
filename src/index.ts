@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 
 import { Command } from 'commander';
 import { stageCommand } from './commands/stage.js';
@@ -7,38 +7,46 @@ import { deployCommand } from './commands/deploy.js';
 import { initCommand } from './commands/init.js';
 import { statusCommand } from './commands/status.js';
 import { logsCommand } from './commands/logs.js';
+import { installCommand } from './commands/install.js';
 
 const program = new Command();
 
 program
   .name('gpd')
-  .description('Git Push Deploy - CLI for git-based deployments with PM2/systemd support')
-  .version('0.1.0');
+  .description('Git Push Deploy - CLI for git-based deployments with PM2 support')
+  .version('0.2.0');
 
-// Development commands
+// Development commands (run on dev machine)
 program
   .command('stage <service>')
-  .description('Copy build artifacts to deploy repository')
+  .description('Copy build artifacts to deploy repository (creates repo if needed)')
   .action(stageCommand);
 
 program
   .command('release <service>')
-  .description('Commit and push deploy repository')
+  .description('Commit and push deploy repository to server')
   .option('-m, --message <message>', 'Commit message')
   .action(releaseCommand);
 
 program
   .command('deploy <service>')
-  .description('Stage, release, and install on server via SSH')
+  .description('Stage and push to server (hook handles install)')
   .option('-m, --message <message>', 'Commit message')
-  .option('--skip-remote', 'Skip remote install (only stage and release)')
-  .action(deployCommand);
+  .option('--skip-push', 'Only stage, do not push')
+  .action((service, options) => deployCommand(service, { message: options.message, skipPush: options.skipPush }));
 
 // Server setup command
 program
   .command('init <service>')
-  .description('Initialize bare repo and clone on server via SSH')
+  .description('Initialize bare repo, target dir, and post-receive hook on server')
   .action(initCommand);
+
+// Server-side command (run by post-receive hook)
+program
+  .command('install <service>')
+  .description('Install service on server (called by post-receive hook)')
+  .option('-c, --config <path>', 'Path to .git-deploy.json')
+  .action((service, options) => installCommand(service, { configPath: options.config }));
 
 program
   .command('status')
