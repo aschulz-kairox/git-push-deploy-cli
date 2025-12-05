@@ -1,6 +1,8 @@
 import chalk from 'chalk';
 import { getServiceConfig, getWorkspaceRoot, getDeployRepoPath } from '../config/loader.js';
-import { gitAddAll, gitCommit, gitPush, hasChanges, getCurrentBranch } from '../utils/git.js';
+import { gitAddAll, gitCommit, gitPush, hasChanges, getCurrentBranch, getGitStatus } from '../utils/git.js';
+import { exists } from '../utils/files.js';
+import { joinPath } from '../utils/files.js';
 
 interface ReleaseOptions {
   message?: string;
@@ -41,4 +43,49 @@ export async function releaseCommand(serviceName: string, options: ReleaseOption
   gitPush(deployRepoPath, 'origin', branch);
   
   console.log(chalk.green(`✓ Released ${serviceName}`));
+}
+
+/**
+ * Dry run version of release command - shows what would be committed/pushed
+ */
+export async function releaseCommandDryRun(serviceName: string): Promise<void> {
+  console.log(chalk.blue(`[DRY RUN] Release preview for ${serviceName}...`));
+  
+  const config = getServiceConfig(serviceName);
+  const workspaceRoot = getWorkspaceRoot();
+  const deployRepoPath = getDeployRepoPath(config, workspaceRoot);
+  
+  // Check if deploy repo exists
+  if (!exists(joinPath(deployRepoPath, '.git'))) {
+    console.log(chalk.yellow('  Deploy repo not initialized yet'));
+    console.log(chalk.gray('  Would be created on first deploy'));
+    return;
+  }
+  
+  // Check for changes
+  if (!hasChanges(deployRepoPath)) {
+    console.log(chalk.yellow('  No changes to release'));
+    return;
+  }
+  
+  // Show what would be committed
+  const status = getGitStatus(deployRepoPath);
+  console.log(chalk.gray('  Would commit:'));
+  for (const line of status.split('\n').filter(l => l.trim())) {
+    const [flag, ...fileParts] = line.trim().split(' ');
+    const file = fileParts.join(' ');
+    if (flag === 'M' || flag === 'MM') {
+      console.log(chalk.yellow(`    M ${file}`));
+    } else if (flag === 'A' || flag === '??') {
+      console.log(chalk.green(`    A ${file}`));
+    } else if (flag === 'D') {
+      console.log(chalk.red(`    D ${file}`));
+    } else {
+      console.log(chalk.gray(`    ${line.trim()}`));
+    }
+  }
+  
+  const branch = getCurrentBranch(deployRepoPath);
+  console.log(chalk.gray(`  Would push to: origin/${branch}`));
+  console.log(chalk.gray(`  Server: ${config.server.host}`));
 }

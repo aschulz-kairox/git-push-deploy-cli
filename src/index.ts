@@ -8,13 +8,14 @@ import { initCommand } from './commands/init.js';
 import { statusCommand } from './commands/status.js';
 import { logsCommand } from './commands/logs.js';
 import { installCommand } from './commands/install.js';
+import { rollbackCommand } from './commands/rollback.js';
 
 const program = new Command();
 
 program
   .name('gpd')
   .description('Git Push Deploy - CLI for git-based deployments with PM2 support')
-  .version('0.2.0');
+  .version('0.3.0');
 
 // Development commands (run on dev machine)
 program
@@ -33,7 +34,24 @@ program
   .description('Stage and push to server (hook handles install)')
   .option('-m, --message <message>', 'Commit message')
   .option('--skip-push', 'Only stage, do not push')
-  .action((service, options) => deployCommand(service, { message: options.message, skipPush: options.skipPush }));
+  .option('--dry-run', 'Preview what would happen without making changes')
+  .action((service, options) => deployCommand(service, { 
+    message: options.message, 
+    skipPush: options.skipPush,
+    dryRun: options.dryRun
+  }));
+
+program
+  .command('rollback <service> [target]')
+  .description('Rollback to a previous deployment version')
+  .option('-s, --steps <n>', 'Go back N commits', parseInt)
+  .option('-l, --list', 'List available versions without rollback')
+  .option('-f, --force', 'Skip confirmation prompt')
+  .action((service, target, options) => rollbackCommand(service, target, {
+    steps: options.steps,
+    list: options.list,
+    force: options.force
+  }));
 
 // Server setup command
 program

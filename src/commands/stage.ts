@@ -88,3 +88,48 @@ export async function stageCommand(serviceName: string): Promise<void> {
   
   console.log(chalk.green(`✓ Staged ${copiedCount} artifact(s) to ${config.sourceDir}/${config.deployRepo}`));
 }
+
+/**
+ * Dry run version of stage command - shows what would be copied without copying
+ */
+export async function stageCommandDryRun(serviceName: string): Promise<void> {
+  console.log(chalk.blue(`[DRY RUN] Stage preview for ${serviceName}...`));
+  
+  const config = getServiceConfig(serviceName);
+  const workspaceRoot = getWorkspaceRoot();
+  const sourceDir = getSourceDir(config, workspaceRoot);
+  const deployRepoPath = getDeployRepoPath(config, workspaceRoot);
+  const artifacts = config.artifacts || DEFAULT_ARTIFACTS;
+  
+  // Validate source directory exists
+  if (!exists(sourceDir)) {
+    throw new Error(`Source directory not found: ${sourceDir}`);
+  }
+  
+  console.log(chalk.gray(`  Source: ${config.sourceDir}`));
+  console.log(chalk.gray(`  Deploy: ${config.sourceDir}/${config.deployRepo}`));
+  
+  // Check if deploy repo needs init
+  if (!exists(joinPath(deployRepoPath, '.git'))) {
+    console.log(chalk.yellow(`  Would initialize deploy repo at ${config.deployRepo}`));
+  }
+  
+  // Show what would be copied
+  console.log(chalk.gray('  Would copy:'));
+  let wouldCopy = 0;
+  for (const artifact of artifacts) {
+    const srcPath = joinPath(sourceDir, artifact);
+    if (exists(srcPath)) {
+      console.log(chalk.gray(`    ✓ ${artifact}`));
+      wouldCopy++;
+    } else {
+      console.log(chalk.yellow(`    ✗ ${artifact} (not found)`));
+    }
+  }
+  
+  if (wouldCopy === 0) {
+    console.log(chalk.red('  No artifacts would be copied!'));
+  } else {
+    console.log(chalk.gray(`  Total: ${wouldCopy} artifact(s) would be staged`));
+  }
+}

@@ -1,11 +1,12 @@
 ﻿import chalk from 'chalk';
-import { stageCommand } from './stage.js';
-import { releaseCommand } from './release.js';
+import { stageCommand, stageCommandDryRun } from './stage.js';
+import { releaseCommand, releaseCommandDryRun } from './release.js';
 import { getServiceConfig } from '../config/loader.js';
 
 interface DeployOptions {
   message?: string;
   skipPush?: boolean;
+  dryRun?: boolean;
 }
 
 /**
@@ -21,10 +22,25 @@ interface DeployOptions {
 export async function deployCommand(serviceName: string, options: DeployOptions = {}): Promise<void> {
   const config = getServiceConfig(serviceName);
   
-  console.log(chalk.blue.bold(`Deploying ${serviceName}...`));
+  if (options.dryRun) {
+    console.log(chalk.blue.bold(`[DRY RUN] Deploy preview for ${serviceName}`));
+  } else {
+    console.log(chalk.blue.bold(`Deploying ${serviceName}...`));
+  }
   console.log(chalk.gray(`  Environment: ${config.environment || 'production'}`));
   console.log(chalk.gray(`  Server: ${config.server.host}`));
   console.log('');
+
+  if (options.dryRun) {
+    // Dry run - just show what would happen
+    await stageCommandDryRun(serviceName);
+    console.log('');
+    await releaseCommandDryRun(serviceName);
+    console.log('');
+    console.log(chalk.yellow.bold('This was a dry run. No changes were made.'));
+    console.log(chalk.gray('Run without --dry-run to actually deploy.'));
+    return;
+  }
 
   // 1. Stage artifacts to deploy repo
   await stageCommand(serviceName);
