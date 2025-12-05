@@ -3,6 +3,7 @@ import { execSync } from 'child_process';
 import { existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { getServiceConfig, findConfigFile } from '../config/loader.js';
+import type { ServiceConfig } from '../config/types.js';
 
 interface InstallOptions {
   configPath?: string;
@@ -150,7 +151,31 @@ export async function installCommand(serviceName: string, options: InstallOption
     exec(npmCmd, { cwd: targetDir });
   }
 
-  // 5. PM2 restart (or start if not running)
+  // 5. Restart process manager
+  const processManager = config.processManager || 'pm2';
+  
+  if (processManager === 'gpdd') {
+    await restartWithGpdd(config, targetDir, runUser, cmdEnv);
+  } else if (processManager === 'pm2') {
+    await restartWithPm2(config, targetDir, runUser, cmdEnv);
+  } else {
+    console.log(chalk.yellow(`Unsupported process manager: ${processManager}`));
+  }
+
+  console.log(chalk.green(`✓ Installed ${serviceName}`));
+}
+
+/**
+ * Restart service using PM2
+ */
+async function restartWithPm2(
+  config: ServiceConfig, 
+  targetDir: string, 
+  runUser: string, 
+  cmdEnv: Record<string, string>
+): Promise<void> {
+  const { processName, pm2Home, pm2User } = config;
+  
   console.log(chalk.blue('Restarting PM2 process...'));
   
   // Check if process exists and restart, otherwise start
@@ -164,7 +189,7 @@ export async function installCommand(serviceName: string, options: InstallOption
     exec(fullPm2Cmd, { cwd: targetDir });
   }
 
-  // 6. PM2 save
+  // PM2 save
   console.log(chalk.blue('Saving PM2 state...'));
   const pm2SaveCmd = 'pm2 save';
   if (pm2User) {
@@ -174,8 +199,6 @@ export async function installCommand(serviceName: string, options: InstallOption
     if (pm2Home) fullSaveCmd = `PM2_HOME=${pm2Home} ${fullSaveCmd}`;
     exec(fullSaveCmd);
   }
-
-  console.log(chalk.green(`✓ Installed ${serviceName}`));
   
   // Show status
   const pm2StatusCmd = 'pm2 status';
@@ -185,5 +208,71 @@ export async function installCommand(serviceName: string, options: InstallOption
     let fullStatusCmd = pm2StatusCmd;
     if (pm2Home) fullStatusCmd = `PM2_HOME=${pm2Home} ${fullStatusCmd}`;
     exec(fullStatusCmd);
+  }
+}
+
+/**
+ * Restart service using GPDD (git-push-deploy-daemon)
+ * Zero-downtime cluster restart
+ */
+async function restartWithGpdd(
+  config: ServiceConfig,
+  targetDir: string,
+  runUser: string,
+  cmdEnv: Record<string, string>
+): Promise<void> {
+  const entryPoint = config.gpddEntryPoint || 'dist/index.js';
+  const workers = config.gpddWorkers || 0; // 0 = CPU count
+  const pm2User = config.pm2User; // Reuse pm2User for gpdd as well
+  
+  console.log(chalk.blue('Managing GPDD process...'));
+  
+  // Check if gpdd is installed
+  try {
+    execSync('which gpdd', { stdio: 'pipe' });
+  } catch {
+    console.log(chalk.yellow('gpdd not found, installing...'));
+    exec('npm install -g git-push-deploy-daemon');
+  }
+  
+  // Check if already running
+  const pidFile = join(targetDir, '.gpdd.pid');
+  
+  if (existsSync(pidFile)) {
+    // Running - send reload signal for zero-downtime restart
+    console.log(chalk.blue('Sending reload signal...'));
+    const reloadCmd = `cd "${targetDir}" && gpdd reload`;
+    if (pm2User) {
+      execAsUser(reloadCmd, pm2User, { env: cmdEnv });
+    } else {
+      exec(reloadCmd);
+    }
+  } else {
+    // Not running - start fresh
+    console.log(chalk.blue(`Starting ${entryPoint} with ${workers || 'auto'} workers...`));
+    const workerArg = workers > 0 ? `-w ${workers}` : '';
+    const startCmd = `cd "${targetDir}" && gpdd start ${entryPoint} ${workerArg}`;
+    if (pm2User) {
+      // Start in background with nohup
+      execAsUser(`nohup ${startCmd} > logs/gpdd.log 2>&1 &`, pm2User, { env: cmdEnv });
+    } else {
+      exec(`nohup ${startCmd} > logs/gpdd.log 2>&1 &`);
+    }
+    
+    // Wait a moment for startup
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  
+  // Show status
+  console.log(chalk.blue('GPDD status:'));
+  const statusCmd = `cd "${targetDir}" && gpdd status`;
+  try {
+    if (pm2User) {
+      execAsUser(statusCmd, pm2User, { env: cmdEnv });
+    } else {
+      exec(statusCmd);
+    }
+  } catch {
+    console.log(chalk.yellow('Could not get gpdd status (process may still be starting)'));
   }
 }

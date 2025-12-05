@@ -131,3 +131,22 @@ export function copySshKey(host: string, keyPath: string, sshOptions?: string): 
     execSync(`ssh-copy-id ${sshOpts}-i ${keyPath} ${host}`, { stdio: 'inherit' });
   }
 }
+
+/**
+ * Run SSH command and return output as Promise
+ */
+export async function runSshCommand(host: string, command: string, sshOptions?: string): Promise<string> {
+  const sshOpts = sshOptions ? `${sshOptions} ` : '';
+  const escapedCmd = command.replace(/"/g, '\\"');
+  const sshCommand = `ssh ${sshOpts}${host} "${escapedCmd}"`;
+  
+  try {
+    const output = execSync(sshCommand, { encoding: 'utf-8' });
+    return output.trim();
+  } catch (error: any) {
+    if (error.stdout) {
+      return error.stdout.toString().trim();
+    }
+    throw new Error(`SSH command failed: ${error.message}`);
+  }
+}

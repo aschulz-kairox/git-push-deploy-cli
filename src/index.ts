@@ -10,13 +10,14 @@ import { logsCommand } from './commands/logs.js';
 import { installCommand } from './commands/install.js';
 import { rollbackCommand } from './commands/rollback.js';
 import { configCommand } from './commands/config.js';
+import { daemonCommand } from './commands/daemon.js';
 
 const program = new Command();
 
 program
   .name('gpd')
   .description('Git Push Deploy - CLI for git-based deployments with PM2 support')
-  .version('0.3.1');
+  .version('0.4.0');
 
 // Development commands (run on dev machine)
 program
@@ -86,5 +87,10 @@ program
   .option('-e, --edit <service>', 'Edit existing service')
   .option('-l, --list', 'List configured services')
   .action((options) => configCommand({ edit: options.edit, list: options.list }));
+
+program
+  .command('daemon <service> <action>')
+  .description('Control gpdd daemon on server (status|reload|stop|start)')
+  .action((service, action) => daemonCommand(service, action));
 
 program.parse();

@@ -1,7 +1,7 @@
 ﻿/**
  * Process manager type
  */
-export type ProcessManagerType = 'pm2' | 'systemd';
+export type ProcessManagerType = 'pm2' | 'systemd' | 'gpdd';
 
 /**
  * Environment type for deployment
@@ -38,6 +38,12 @@ export interface ServiceConfig {
 
   /** User to run PM2 commands as (via sudo -u) */
   pm2User?: string;
+
+  /** GPDD: Number of workers (default: CPU count) */
+  gpddWorkers?: number;
+
+  /** GPDD: App entry point (default: dist/index.js) */
+  gpddEntryPoint?: string;
 
   /** Environment type (production, staging, development) */
   environment?: EnvironmentType;

@@ -114,7 +114,7 @@ async function createServiceConfig(rl: readline.Interface, existingConfig?: Serv
   
   // Process manager
   console.log('');
-  const processManager = await promptSelect(rl, 'Process manager:', ['pm2', 'systemd'], 0) as 'pm2' | 'systemd';
+  const processManager = await promptSelect(rl, 'Process manager:', ['pm2', 'gpdd', 'systemd'], 0) as 'pm2' | 'gpdd' | 'systemd';
   const processName = await prompt(rl, 'Process name', existingConfig?.processName || 'my-service');
   
   // PM2 specific
@@ -125,6 +125,21 @@ async function createServiceConfig(rl: readline.Interface, existingConfig?: Serv
     if (usePm2User) {
       pm2User = await prompt(rl, 'PM2 user', existingConfig?.pm2User || 'deploy');
       pm2Home = await prompt(rl, 'PM2_HOME directory', existingConfig?.pm2Home || `/opt/${processName}/.pm2`);
+    }
+  }
+  
+  // GPDD specific
+  let gpddWorkers: number | undefined;
+  let gpddEntryPoint: string | undefined;
+  if (processManager === 'gpdd') {
+    const workersStr = await prompt(rl, 'Number of workers (0 = CPU count)', String(existingConfig?.gpddWorkers || 0));
+    gpddWorkers = parseInt(workersStr, 10) || undefined;
+    gpddEntryPoint = await prompt(rl, 'Entry point', existingConfig?.gpddEntryPoint || 'dist/index.js');
+    
+    // gpdd also supports running as different user
+    const useGpddUser = await promptYesNo(rl, 'Run GPDD as different user (sudo -u)?', !!existingConfig?.pm2User);
+    if (useGpddUser) {
+      pm2User = await prompt(rl, 'User', existingConfig?.pm2User || 'deploy');
     }
   }
   
@@ -193,6 +208,8 @@ async function createServiceConfig(rl: readline.Interface, existingConfig?: Serv
   if (group) config.server.group = group;
   if (pm2Home) config.pm2Home = pm2Home;
   if (pm2User) config.pm2User = pm2User;
+  if (gpddWorkers) config.gpddWorkers = gpddWorkers;
+  if (gpddEntryPoint && gpddEntryPoint !== 'dist/index.js') config.gpddEntryPoint = gpddEntryPoint;
   if (env && Object.keys(env).length > 0) config.env = env;
   
   return config;
