@@ -1,6 +1,7 @@
 ﻿#!/usr/bin/env node
 
 import { Command } from 'commander';
+import { createRequire } from 'module';
 import { stageCommand } from './commands/stage.js';
 import { releaseCommand } from './commands/release.js';
 import { deployCommand } from './commands/deploy.js';
@@ -12,12 +13,16 @@ import { rollbackCommand } from './commands/rollback.js';
 import { configCommand } from './commands/config.js';
 import { daemonCommand } from './commands/daemon.js';
 
+// Read version from package.json dynamically
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json');
+
 const program = new Command();
 
 program
   .name('gpd')
   .description('Git Push Deploy - CLI for git-based deployments with PM2 support')
-  .version('0.4.0');
+  .version(version);
 
 // Development commands (run on dev machine)
 program
