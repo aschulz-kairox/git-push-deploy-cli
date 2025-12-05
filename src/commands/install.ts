@@ -151,7 +151,25 @@ export async function installCommand(serviceName: string, options: InstallOption
     exec(npmCmd, { cwd: targetDir });
   }
 
-  // 5. Restart process manager
+  // 5. Run post-deploy hooks (server-side, after npm install)
+  if (config.hooks?.postDeploy && config.hooks.postDeploy.length > 0) {
+    console.log(chalk.blue('Running post-deploy hooks...'));
+    for (const hookCmd of config.hooks.postDeploy) {
+      console.log(chalk.gray(`  $ ${hookCmd}`));
+      try {
+        if (pm2User) {
+          execAsUser(hookCmd, pm2User, { cwd: targetDir, env: cmdEnv });
+        } else {
+          exec(hookCmd, { cwd: targetDir });
+        }
+      } catch (error) {
+        console.log(chalk.red(`  ✗ Hook failed: ${hookCmd}`));
+        // Continue with other hooks, but warn
+      }
+    }
+  }
+
+  // 6. Restart process manager
   const processManager = config.processManager || 'pm2';
   
   if (processManager === 'gpdd') {

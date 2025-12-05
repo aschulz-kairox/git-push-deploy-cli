@@ -1,13 +1,32 @@
 import chalk from 'chalk';
 import { execSync } from 'child_process';
 import { getServiceConfig, getWorkspaceRoot, getDeployRepoPath } from '../config/loader.js';
-import { getServers, getPrimaryServer, parseSshPort, buildSshUrl } from '../config/types.js';
+import { getServers, getPrimaryServer, parseSshPort, buildSshUrl, type HooksConfig } from '../config/types.js';
 import { gitAddAll, gitCommit, gitPush, hasChanges, getCurrentBranch, getGitStatus } from '../utils/git.js';
 import { exists } from '../utils/files.js';
 import { joinPath } from '../utils/files.js';
 
 interface ReleaseOptions {
   message?: string;
+}
+
+/**
+ * Execute hook commands
+ */
+function executeHooks(hooks: string[], label: string, cwd: string): boolean {
+  if (!hooks || hooks.length === 0) return true;
+  
+  console.log(chalk.gray(`  Running ${label} hooks...`));
+  for (const cmd of hooks) {
+    console.log(chalk.gray(`    $ ${cmd}`));
+    try {
+      execSync(cmd, { cwd, stdio: 'inherit' });
+    } catch (error: any) {
+      console.log(chalk.red(`  ✗ Hook failed: ${cmd}`));
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -75,6 +94,15 @@ export async function releaseCommand(serviceName: string, options: ReleaseOption
   const servers = getServers(config);
   const workspaceRoot = getWorkspaceRoot();
   const deployRepoPath = getDeployRepoPath(config, workspaceRoot);
+  const sourceDir = joinPath(workspaceRoot, config.sourceDir);
+  
+  // Run pre-deploy hooks (local, in source directory)
+  if (config.hooks?.preDeploy) {
+    if (!executeHooks(config.hooks.preDeploy, 'pre-deploy', sourceDir)) {
+      console.log(chalk.red('✗ Pre-deploy hooks failed, aborting release.'));
+      return;
+    }
+  }
   
   // Check for changes
   if (!hasChanges(deployRepoPath)) {
@@ -99,6 +127,7 @@ export async function releaseCommand(serviceName: string, options: ReleaseOption
   const branch = getCurrentBranch(deployRepoPath);
   
   // Push to each server
+  let pushSuccess = true;
   if (servers.length === 1) {
     console.log(chalk.gray(`  Pushing to origin/${branch}...`));
     gitPush(deployRepoPath, 'origin', branch);
@@ -113,8 +142,14 @@ export async function releaseCommand(serviceName: string, options: ReleaseOption
         console.log(chalk.green(`    ✓ ${serverLabel}`));
       } catch (error: any) {
         console.log(chalk.red(`    ✗ ${serverLabel}: ${error.message}`));
+        pushSuccess = false;
       }
     }
+  }
+  
+  // Run post-deploy-local hooks (local, after successful push)
+  if (pushSuccess && config.hooks?.postDeployLocal) {
+    executeHooks(config.hooks.postDeployLocal, 'post-deploy-local', sourceDir);
   }
   
   console.log(chalk.green(`✓ Released ${serviceName}`));

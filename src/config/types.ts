@@ -9,6 +9,20 @@ export type ProcessManagerType = 'pm2' | 'systemd' | 'gpdd';
 export type EnvironmentType = 'production' | 'staging' | 'development';
 
 /**
+ * Hooks configuration for pre/post deployment scripts
+ */
+export interface HooksConfig {
+  /** Commands to run locally before deployment (before git push) */
+  preDeploy?: string[];
+  
+  /** Commands to run on server after deployment (after npm install) */
+  postDeploy?: string[];
+  
+  /** Commands to run locally after successful deployment */
+  postDeployLocal?: string[];
+}
+
+/**
  * Server configuration for deployment target
  */
 export interface ServerConfig {
@@ -73,6 +87,9 @@ export interface ServiceConfig {
 
   /** Environment variables to write to .env file on server */
   env?: Record<string, string | number | boolean>;
+
+  /** Deployment hooks (pre-deploy, post-deploy scripts) */
+  hooks?: HooksConfig;
 
   /** Server-side configuration (single server) */
   server?: ServerConfig;
