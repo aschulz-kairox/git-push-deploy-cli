@@ -149,6 +149,12 @@ export interface ServiceConfig {
   /** GPDD: App entry point (default: dist/index.js) */
   gpddEntryPoint?: string;
 
+  /** GPDD: Ready check URL (polled until healthy to mark worker as ready) */
+  gpddReadyUrl?: string;
+
+  /** GPDD: Health check URL (ongoing monitoring after ready) */
+  gpddHealthUrl?: string;
+
   /** Environment type (production, staging, development) */
   environment?: EnvironmentType;
 
