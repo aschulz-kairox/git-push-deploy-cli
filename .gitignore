@@ -2,3 +2,6 @@ node_modules/
 dist/
 *.log
 .env
+
+# Test artifacts
+test/e2e/tmp/

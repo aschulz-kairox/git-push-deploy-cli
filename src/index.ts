@@ -9,13 +9,14 @@ import { statusCommand } from './commands/status.js';
 import { logsCommand } from './commands/logs.js';
 import { installCommand } from './commands/install.js';
 import { rollbackCommand } from './commands/rollback.js';
+import { configCommand } from './commands/config.js';
 
 const program = new Command();
 
 program
   .name('gpd')
   .description('Git Push Deploy - CLI for git-based deployments with PM2 support')
-  .version('0.3.0');
+  .version('0.3.1');
 
 // Development commands (run on dev machine)
 program
@@ -78,5 +79,12 @@ program
   .option('-n, --lines <lines>', 'Number of lines to show', '50')
   .option('-f, --follow', 'Follow log output')
   .action(logsCommand);
+
+program
+  .command('config')
+  .description('Interactive configuration wizard for .git-deploy.json')
+  .option('-e, --edit <service>', 'Edit existing service')
+  .option('-l, --list', 'List configured services')
+  .action((options) => configCommand({ edit: options.edit, list: options.list }));
 
 program.parse();

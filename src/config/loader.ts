@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import type { DeployConfig, ServiceConfig } from './types.js';
 
-const CONFIG_FILENAME = '.git-deploy.json';
+export const CONFIG_FILENAME = '.git-deploy.json';
 
 /**
  * Find config file by walking up directory tree

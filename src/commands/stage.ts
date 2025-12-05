@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { execSync } from 'child_process';
-import { getServiceConfig, getWorkspaceRoot, getSourceDir, getDeployRepoPath } from '../config/loader.js';
+import { getServiceConfig, getWorkspaceRoot, getSourceDir, getDeployRepoPath, CONFIG_FILENAME } from '../config/loader.js';
 import { DEFAULT_ARTIFACTS, parseSshPort, buildSshUrl } from '../config/types.js';
 import { ensureDir, removeDir, copy, exists, joinPath } from '../utils/files.js';
 
@@ -84,6 +84,14 @@ export async function stageCommand(serviceName: string): Promise<void> {
   
   if (copiedCount === 0) {
     throw new Error('No artifacts were copied. Check your artifacts config and build output.');
+  }
+  
+  // Copy .git-deploy.json to deploy repo (needed by server-side install)
+  const configSrc = joinPath(workspaceRoot, CONFIG_FILENAME);
+  const configDest = joinPath(deployRepoPath, CONFIG_FILENAME);
+  if (exists(configSrc)) {
+    copy(configSrc, configDest);
+    console.log(chalk.gray(`    ${CONFIG_FILENAME}`));
   }
   
   console.log(chalk.green(`✓ Staged ${copiedCount} artifact(s) to ${config.sourceDir}/${config.deployRepo}`));
