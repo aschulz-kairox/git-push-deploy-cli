@@ -39,7 +39,8 @@ program
 program
   .command('init <service>')
   .description('Initialize bare repo, target dir, and post-receive hook on server')
-  .action(initCommand);
+  .option('--skip-ssh-check', 'Skip SSH key verification')
+  .action((service, options) => initCommand(service, { skipSshCheck: options.skipSshCheck }));
 
 // Server-side command (run by post-receive hook)
 program

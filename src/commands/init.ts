@@ -1,9 +1,78 @@
 import chalk from 'chalk';
 import { getServiceConfig } from '../config/loader.js';
-import { sshExec } from '../utils/shell.js';
+import { sshExec, checkSshConnection, findSshPublicKey, copySshKey } from '../utils/shell.js';
+import * as readline from 'readline';
 
 interface InitOptions {
-  // No options needed for now
+  skipSshCheck?: boolean;
+}
+
+/**
+ * Prompt user for yes/no confirmation
+ */
+async function confirm(question: string): Promise<boolean> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+  
+  return new Promise((resolve) => {
+    rl.question(`${question} (y/n): `, (answer) => {
+      rl.close();
+      resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
+    });
+  });
+}
+
+/**
+ * Check SSH connection and offer to copy key if needed
+ * Returns true if connection is ready, false if user aborted
+ */
+async function ensureSshConnection(host: string, sshOptions?: string): Promise<boolean> {
+  console.log(chalk.blue('Checking SSH connection...'));
+  
+  // Test connection
+  if (checkSshConnection(host, sshOptions)) {
+    console.log(chalk.green('  ✓ SSH key authentication working'));
+    return true;
+  }
+  
+  console.log(chalk.yellow('  ⚠ SSH key authentication not working'));
+  
+  // Find local public key
+  const keyPath = findSshPublicKey();
+  if (!keyPath) {
+    console.log(chalk.red('  ✗ No SSH public key found (~/.ssh/id_*.pub)'));
+    console.log(chalk.gray('    Generate one with: ssh-keygen -t ed25519'));
+    return false;
+  }
+  
+  console.log(chalk.gray(`  Found key: ${keyPath}`));
+  
+  // Offer to copy key
+  const shouldCopy = await confirm('  Copy SSH key to server?');
+  if (!shouldCopy) {
+    console.log(chalk.yellow('  Skipping SSH key setup. You may need to enter password for each command.'));
+    return true; // Continue anyway
+  }
+  
+  console.log(chalk.blue('  Copying SSH key...'));
+  try {
+    copySshKey(host, keyPath, sshOptions);
+    console.log(chalk.green('  ✓ SSH key copied'));
+    
+    // Verify it works now
+    if (checkSshConnection(host, sshOptions)) {
+      console.log(chalk.green('  ✓ SSH key authentication now working'));
+      return true;
+    } else {
+      console.log(chalk.yellow('  ⚠ SSH still requires password. Check server configuration.'));
+      return true; // Continue anyway
+    }
+  } catch (error) {
+    console.log(chalk.red(`  ✗ Failed to copy SSH key: ${error}`));
+    return false;
+  }
 }
 
 /**
@@ -98,6 +167,17 @@ export async function initCommand(serviceName: string, _options: InitOptions = {
   console.log(chalk.gray(`  Target dir: ${targetDir}`));
   if (group) console.log(chalk.gray(`  Group: ${group}`));
   if (pm2User) console.log(chalk.gray(`  PM2 user: ${pm2User}`));
+  console.log('');
+  
+  // 0. Check SSH connection first
+  if (!_options.skipSshCheck) {
+    const sshReady = await ensureSshConnection(host, sshOptions);
+    if (!sshReady) {
+      console.log(chalk.red('Aborting. Fix SSH connection and try again.'));
+      process.exit(1);
+    }
+    console.log('');
+  }
   
   // 1. Create group if specified
   if (group) {

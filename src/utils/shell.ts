@@ -1,4 +1,7 @@
 import { execSync } from 'child_process';
+import { existsSync, readFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 
 /**
  * Execute a shell command and return output
@@ -61,4 +64,70 @@ export function sshExec(host: string, command: string, options: { silent?: boole
   const sshOpts = options.sshOptions ? `${options.sshOptions} ` : '';
   const sshCommand = `ssh ${sshOpts}${host} "${escapedCmd}"`;
   return exec(sshCommand, { silent: options.silent });
+}
+
+/**
+ * Find SSH public key file
+ * Returns path to first found key, or null if none exists
+ */
+export function findSshPublicKey(): string | null {
+  const home = homedir();
+  const keyFiles = [
+    join(home, '.ssh', 'id_ed25519.pub'),
+    join(home, '.ssh', 'id_rsa.pub'),
+    join(home, '.ssh', 'id_ecdsa.pub'),
+  ];
+  
+  for (const keyFile of keyFiles) {
+    if (existsSync(keyFile)) {
+      return keyFile;
+    }
+  }
+  return null;
+}
+
+/**
+ * Read SSH public key content
+ */
+export function readSshPublicKey(keyPath: string): string {
+  return readFileSync(keyPath, 'utf-8').trim();
+}
+
+/**
+ * Check if SSH connection works without password (key-based auth)
+ * Returns true if connection succeeds, false otherwise
+ */
+export function checkSshConnection(host: string, sshOptions?: string): boolean {
+  try {
+    const sshOpts = sshOptions ? `${sshOptions} ` : '';
+    // Use BatchMode to fail immediately if password is needed
+    // Use ConnectTimeout to not wait too long
+    execSync(
+      `ssh ${sshOpts}-o BatchMode=yes -o ConnectTimeout=5 ${host} "echo ok"`,
+      { stdio: 'pipe', timeout: 10000 }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Copy SSH public key to remote host
+ * Uses ssh-copy-id on Unix, manual append on Windows
+ */
+export function copySshKey(host: string, keyPath: string, sshOptions?: string): void {
+  const sshOpts = sshOptions ? `${sshOptions} ` : '';
+  const isWindows = process.platform === 'win32';
+  
+  if (isWindows) {
+    // Windows: manually append key to authorized_keys
+    const pubKey = readSshPublicKey(keyPath);
+    const escapedKey = pubKey.replace(/"/g, '\\"');
+    const cmd = `ssh ${sshOpts}${host} "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo \\"${escapedKey}\\" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"`;
+    execSync(cmd, { stdio: 'inherit' });
+  } else {
+    // Unix: use ssh-copy-id
+    execSync(`ssh-copy-id ${sshOpts}-i ${keyPath} ${host}`, { stdio: 'inherit' });
+  }
 }
