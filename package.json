@@ -1,6 +1,6 @@
 {
   "name": "git-push-deploy-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Git Push Deploy - CLI for git-based deployments. Push to bare repos, auto npm install, PM2/systemd restart. Monorepo-ready.",
   "keywords": [
     "git",
