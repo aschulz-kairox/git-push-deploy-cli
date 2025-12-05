@@ -37,43 +37,15 @@ jobs:
         run: npx tsc --noEmit
 
   # E2E tests require Docker, run separately
+  # Currently disabled - requires custom test-server Docker image
+  # To run locally: cd ../test-server && docker-compose up -d && cd ../git-push-deploy-cli && npm test
   e2e:
     runs-on: ubuntu-latest
     needs: build
-    
-    services:
-      gpd-test-server:
-        image: node:22
-        options: >-
-          --name gpd-test-server
-          --health-cmd "curl -f http://localhost:3100/health || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 2222:22
-          - 3100:3100
-    
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.x'
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Build
-        run: npm run build
-      
-      # E2E tests are skipped in CI for now - they require full Docker setup
-      # To run locally: docker-compose up -d && npm test
-      - name: Run unit tests (E2E skipped in CI)
-        run: echo "E2E tests require Docker test-server, run locally with docker-compose"
+      - name: E2E tests (skipped in CI)
+        run: echo "E2E tests require Docker test-server with SSH. Run locally with docker-compose."
 
   publish:
     needs: [build]
