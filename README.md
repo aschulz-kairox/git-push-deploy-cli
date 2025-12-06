@@ -498,6 +498,74 @@ interface ServiceConfig {
 }
 ```
 
+## 🔒 Security
+
+### Environment Variable Substitution
+
+GPD supports `${VAR_NAME}` syntax for sensitive values. This prevents secrets from being committed to version control:
+
+```json
+{
+  "services": {
+    "my-api": {
+      "env": {
+        "DATABASE_URL": "${DATABASE_URL}",
+        "API_KEY": "${API_KEY}"
+      },
+      "notifications": {
+        "slack": {
+          "webhookUrl": "${SLACK_WEBHOOK_URL}"
+        }
+      }
+    }
+  }
+}
+```
+
+**Best Practices:**
+1. **Copy the example:** Start with `.git-deploy.example.json` as template
+2. **Gitignore config:** Add `.git-deploy.json` to `.gitignore`
+3. **Use env vars:** All webhook URLs, tokens, and credentials should use `${VAR}` syntax
+4. **Set env vars:** Export variables before running gpd commands
+
+```bash
+export SLACK_WEBHOOK_URL="https://hooks.slack.com/..."
+export DATABASE_URL="postgresql://..."
+gpd deploy my-service
+```
+
+### Secret Detection
+
+GPD warns if it detects hardcoded values in sensitive fields:
+
+```
+⚠ Security warning: Possible hardcoded secrets detected in config:
+  notifications.slack.webhookUrl: Consider using ${ENV_VAR} instead
+  File: /path/to/.git-deploy.json
+  Tip: Use ${ENV_VAR} syntax for sensitive values
+```
+
+### Input Validation
+
+GPD validates all config values to prevent command injection:
+- Host names: alphanumeric, `.`, `@`, `-`, `:`
+- User names: alphanumeric, `_`, `-`
+- Process names: alphanumeric, `_`, `-`
+- Paths: alphanumeric, `/`, `.`, `_`, `-`
+
+### Hook Execution
+
+Hooks run with full shell access - this is by design. GPD logs hook execution clearly:
+
+```
+⚠ Running pre-deploy hooks (2 commands)...
+    Working directory: /path/to/project
+    ▶ npm run build
+    ✓ Hook completed
+    ▶ npm run test
+    ✓ Hook completed
+```
+
 ## 🛠️ Server Prerequisites
 
 - **Node.js** (18+ recommended)

@@ -146,11 +146,13 @@ export async function installCommand(serviceName: string, options: InstallOption
 
   // 5. Run post-deploy hooks (server-side, after npm install)
   if (config.hooks?.postDeploy && config.hooks.postDeploy.length > 0) {
-    console.log(chalk.blue('Running post-deploy hooks...'));
+    console.log(chalk.yellow(`⚠ Running post-deploy hooks (${config.hooks.postDeploy.length} commands)...`));
+    console.log(chalk.gray(`  Working directory: ${targetDir}`));
     for (const hookCmd of config.hooks.postDeploy) {
-      console.log(chalk.gray(`  $ ${hookCmd}`));
+      console.log(chalk.yellow(`  ▶ ${hookCmd}`));
       try {
         exec(hookCmd, { cwd: targetDir });
+        console.log(chalk.green(`  ✓ Hook completed`));
       } catch (error) {
         console.log(chalk.red(`  ✗ Hook failed: ${hookCmd}`));
         // Continue with other hooks, but warn

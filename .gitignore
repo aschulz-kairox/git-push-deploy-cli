@@ -3,5 +3,8 @@ dist/
 *.log
 .env
 
+# Config file may contain secrets - use .git-deploy.example.json as template
+.git-deploy.json
+
 # Test artifacts
 test/e2e/tmp/

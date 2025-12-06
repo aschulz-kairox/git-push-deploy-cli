@@ -1,0 +1,94 @@
+{
+  "// IMPORTANT": "Copy this file to .git-deploy.json and fill in your values",
+  "// SECURITY": "Add .git-deploy.json to .gitignore to avoid committing secrets",
+
+  "services": {
+    "my-service-staging": {
+      "sourceDir": "my-service",
+      "deployRepo": "deploy/staging",
+      "artifacts": ["dist", "package.json", "ecosystem.config.cjs"],
+      "processManager": "pm2",
+      "processName": "my-service-staging",
+      "environment": "staging",
+
+      "// SECRETS": "Use ${ENV_VAR} syntax for sensitive values",
+      "env": {
+        "NODE_ENV": "staging",
+        "PORT": 3001,
+        "DATABASE_URL": "${DATABASE_URL}",
+        "API_KEY": "${API_KEY}"
+      },
+
+      "server": {
+        "host": "user@server.example.com",
+        "sshOptions": "-p 22",
+        "targetDir": "/opt/my-app/staging/my-service",
+        "bareRepo": "/git/my-app/staging/my-service"
+      },
+
+      "hooks": {
+        "preDeploy": ["npm run build", "npm run test"],
+        "postDeploy": ["npx prisma migrate deploy"],
+        "postDeployLocal": ["echo 'Deployed!'"]
+      },
+
+      "notifications": {
+        "slack": {
+          "webhookUrl": "${SLACK_WEBHOOK_URL}",
+          "channel": "#deployments",
+          "onlyOnFailure": false
+        },
+        "discord": {
+          "webhookUrl": "${DISCORD_WEBHOOK_URL}",
+          "onlyOnFailure": false
+        },
+        "webhook": {
+          "url": "${CUSTOM_WEBHOOK_URL}",
+          "method": "POST",
+          "headers": {
+            "Authorization": "Bearer ${WEBHOOK_AUTH_TOKEN}"
+          }
+        }
+      }
+    },
+
+    "my-service-production": {
+      "sourceDir": "my-service",
+      "deployRepo": "deploy/production",
+      "artifacts": ["dist", "package.json", "ecosystem.config.cjs"],
+      "processManager": "pm2",
+      "processName": "my-service-prod",
+      "environment": "production",
+
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": 3000,
+        "DATABASE_URL": "${PROD_DATABASE_URL}",
+        "API_KEY": "${PROD_API_KEY}"
+      },
+
+      "// MULTI-SERVER": "Deploy to multiple servers in parallel",
+      "servers": [
+        {
+          "name": "primary",
+          "host": "user@server1.example.com",
+          "targetDir": "/opt/my-app/production/my-service",
+          "bareRepo": "/git/my-app/production/my-service"
+        },
+        {
+          "name": "secondary",
+          "host": "user@server2.example.com",
+          "targetDir": "/opt/my-app/production/my-service",
+          "bareRepo": "/git/my-app/production/my-service"
+        }
+      ],
+
+      "notifications": {
+        "slack": {
+          "webhookUrl": "${SLACK_WEBHOOK_URL}",
+          "onlyOnFailure": false
+        }
+      }
+    }
+  }
+}

@@ -12,18 +12,22 @@ interface ReleaseOptions {
 }
 
 /**
- * Execute hook commands
+ * Execute hook commands with security logging
+ * Hooks run with full shell access - this is by design but should be clearly logged
  */
 function executeHooks(hooks: string[], label: string, cwd: string): boolean {
   if (!hooks || hooks.length === 0) return true;
   
-  console.log(chalk.gray(`  Running ${label} hooks...`));
+  console.log(chalk.yellow(`  ⚠ Running ${label} hooks (${hooks.length} commands)...`));
+  console.log(chalk.gray(`    Working directory: ${cwd}`));
+  
   for (const cmd of hooks) {
-    console.log(chalk.gray(`    $ ${cmd}`));
+    console.log(chalk.yellow(`    ▶ ${cmd}`));
     try {
       execSync(cmd, { cwd, stdio: 'inherit' });
+      console.log(chalk.green(`    ✓ Hook completed`));
     } catch (error: any) {
-      console.log(chalk.red(`  ✗ Hook failed: ${cmd}`));
+      console.log(chalk.red(`    ✗ Hook failed: ${cmd}`));
       return false;
     }
   }
