@@ -12,6 +12,7 @@ import { installCommand } from './commands/install.js';
 import { rollbackCommand } from './commands/rollback.js';
 import { configCommand } from './commands/config.js';
 import { daemonCommand } from './commands/daemon.js';
+import { autostartCommand } from './commands/autostart.js';
 
 // Read version from package.json dynamically
 const require = createRequire(import.meta.url);
@@ -97,5 +98,10 @@ program
   .command('daemon <service> <action>')
   .description('Control gpdd daemon on server (status|reload|stop|start)')
   .action((service, action) => daemonCommand(service, action));
+
+program
+  .command('autostart <service> <action>')
+  .description('Manage systemd autostart for gpdd services (enable|disable|status)')
+  .action((service, action) => autostartCommand(service, action));
 
 program.parse();

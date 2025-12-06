@@ -155,6 +155,15 @@ export interface ServiceConfig {
   /** GPDD: Health check URL (ongoing monitoring after ready) */
   gpddHealthUrl?: string;
 
+  /** GPDD: IPC port for status/control API (default: auto-calculated) */
+  gpddIpcPort?: number;
+
+  /** GPDD: Bind address for IPC server (default: 127.0.0.1, use 0.0.0.0 for remote access) */
+  gpddBindAddress?: string;
+
+  /** GPDD: Systemd services to start after (e.g., ['postgresql.service']) */
+  gpddAfterServices?: string[];
+
   /** Environment type (production, staging, development) */
   environment?: EnvironmentType;
 

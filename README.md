@@ -270,6 +270,7 @@ That's it! Your app is now running on the server.
 │ gpd rollback   │ Rollback to previous version                              │
 │ gpd logs       │ Show application logs from server                         │
 │ gpd daemon     │ Manage GPDD process (start/stop/status/logs)              │
+│ gpd autostart  │ Manage systemd autostart for GPDD services                │
 ├────────────────┼───────────────────────────────────────────────────────────┤
 │ Options        │                                                           │
 ├────────────────┼───────────────────────────────────────────────────────────┤
@@ -461,9 +462,16 @@ interface ServiceConfig {
   processManager?: 'pm2' | 'gpdd' | 'systemd';
   processName: string;            // Process name
   pm2Home?: string;               // PM2_HOME directory
-  pm2User?: string;               // User for PM2 (sudo -u)
-  gpddWorkers?: number;           // GPDD worker count (0 = auto)
+  pm2User?: string;               // User for PM2/GPDD (sudo -u)
+  
+  // GPDD-specific options
+  gpddWorkers?: number;           // Worker count (default: 2)
   gpddEntryPoint?: string;        // Entry point (default: dist/index.js)
+  gpddReadyUrl?: string;          // Health check URL for ready state
+  gpddHealthUrl?: string;         // Ongoing health check URL
+  gpddIpcPort?: number;           // IPC port for status/control API
+  gpddBindAddress?: string;       // IPC bind address (default: 127.0.0.1)
+  gpddAfterServices?: string[];   // Systemd dependencies (e.g., ["postgresql.service"])
   
   // Environment
   environment?: 'production' | 'staging' | 'development';
@@ -497,6 +505,31 @@ interface ServiceConfig {
   };
 }
 ```
+
+### GPDD Autostart (Systemd)
+
+Manage systemd services for GPDD processes:
+
+```bash
+# Enable autostart for a service
+gpd autostart kairox-api-prod enable
+
+# Disable autostart
+gpd autostart kairox-api-prod disable
+
+# Check status
+gpd autostart kairox-api-prod status
+
+# Batch operations for all gpdd services
+gpd autostart all enable
+gpd autostart all status
+```
+
+The generated systemd unit includes:
+- Correct user/group from config
+- Environment variables from `environment` field
+- GPDD options: `--workers`, `--ipc-port`, `--bind`, `--ready-url`, `--health-url`
+- Dependencies from `gpddAfterServices` (e.g., `postgresql.service`)
 
 ## 🔒 Security
 
