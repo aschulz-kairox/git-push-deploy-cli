@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { getServiceConfig, findConfigFile } from '../config/loader.js';
 import { getServers, type ServerConfig } from '../config/types.js';
-import { sshExec, checkSshConnection, findSshPublicKey, copySshKey } from '../utils/shell.js';
+import { sshExec, checkSshConnection, findSshPublicKey, copySshKey, checkSshKeyPermissions } from '../utils/shell.js';
 import * as readline from 'readline';
 
 interface InitOptions {
@@ -50,6 +50,9 @@ async function ensureSshConnection(host: string, sshOptions?: string): Promise<b
   }
   
   console.log(chalk.gray(`  Found key: ${keyPath}`));
+  
+  // Check private key permissions (security warning if too open)
+  checkSshKeyPermissions(keyPath);
   
   // Offer to copy key
   const shouldCopy = await confirm('  Copy SSH key to server?');

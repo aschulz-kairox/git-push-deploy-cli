@@ -1,7 +1,8 @@
 import { execSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
-import { homedir } from 'os';
+import { existsSync, readFileSync, statSync } from 'fs';
+import { homedir, platform } from 'os';
 import { join } from 'path';
+import chalk from 'chalk';
 
 /**
  * Execute a shell command and return output
@@ -84,6 +85,44 @@ export function findSshPublicKey(): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Check SSH key file permissions (Unix only)
+ * SSH requires private keys to have 600 permissions (owner read/write only)
+ * Warns if permissions are too open, which is a security risk
+ * 
+ * @param keyPath Path to public key (.pub) - will check the private key
+ */
+export function checkSshKeyPermissions(keyPath: string): void {
+  // Skip on Windows - permissions work differently
+  if (platform() === 'win32') {
+    return;
+  }
+  
+  // Check private key (remove .pub extension)
+  const privateKeyPath = keyPath.replace(/\.pub$/, '');
+  
+  if (!existsSync(privateKeyPath)) {
+    return;
+  }
+  
+  try {
+    const stats = statSync(privateKeyPath);
+    const mode = stats.mode & 0o777; // Get permission bits
+    
+    // Check if permissions are too open (should be 600 or 400)
+    if (mode & 0o077) { // Any group or other permissions
+      const octal = mode.toString(8).padStart(3, '0');
+      console.log(chalk.yellow(`\n⚠ Security warning: SSH private key has insecure permissions`));
+      console.log(chalk.yellow(`  File: ${privateKeyPath}`));
+      console.log(chalk.yellow(`  Current: ${octal} (should be 600 or 400)`));
+      console.log(chalk.gray(`  Fix with: chmod 600 ${privateKeyPath}`));
+      console.log();
+    }
+  } catch {
+    // Ignore errors (e.g., can't stat file)
+  }
 }
 
 /**
